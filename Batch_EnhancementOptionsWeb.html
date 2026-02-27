@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Enhancer Upload | Cody Pools</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #111;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px;
+    }
+
+    /* Hero Logo Styling */
+    .hero-logo {
+      width: 575px; 
+      height: auto;
+      margin-bottom: 20px;
+      border-radius: 8px;
+    }
+
+    form, #result-container {
+      background: #222;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      width: 100%;
+      max-width: 500px;
+    }
+
+    #result-container { display: none; text-align: center; }
+
+    .instructions-box {
+      background: #2a2a2a;
+      border-left: 4px solid #007bff;
+      padding: 15px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #ccc;
+    }
+
+    .tips-box {
+      background: #1a1a1a;
+      border: 1px dashed #444;
+      padding: 15px;
+      margin-top: 20px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #999;
+    }
+
+    ul {
+      margin: 8px 0 0 18px;
+      padding: 0;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: bold;
+      color: #bbb;
+    }
+
+    input[type="text"], 
+    select, 
+    input[type="file"] {
+      width: 100%;
+      padding: 10px;
+      background: #333;
+      border: 1px solid #444;
+      border-radius: 5px;
+      color: #fff;
+      box-sizing: border-box;
+    }
+
+    button {
+      width: 100%;
+      padding: 15px;
+      font-size: 18px;
+      font-weight: bold;
+      background: #007bff;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      cursor: pointer;
+      transition: background 0.3s;
+      margin-top: 10px;
+    }
+
+    button:hover {
+      background: #0056b3;
+    }
+
+    h2 {
+      margin-top: 0;
+      text-align: center;
+    }
+
+    /* GALLERY STYLING */
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-top: 20px;
+    }
+
+    .gallery-item {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #444;
+    }
+
+    /* LOADING OVERLAY STYLES */
+    #loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      backdrop-filter: blur(10px);
+      z-index: 10000;
+      display: none; 
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+    }
+
+    .spinner {
+      width: 70px;
+      height: 70px;
+      border: 6px solid #333;
+      border-top: 6px solid #007bff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 25px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .loading-text {
+      font-size: 22px;
+      font-weight: bold;
+      color: #fff;
+      letter-spacing: 1px;
+    }
+
+    .loading-subtext {
+      font-size: 14px;
+      color: #888;
+      margin-top: 12px;
+      max-width: 300px;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div class="loading-text">Analyzing & Enhancing...</div>
+    <div class="loading-subtext">Enhancing your renderings into luxury-grade presentation visuals… Each Image can take 1-2mins. At 3mins the operation will timeout. Go back and try again with less images.</div>
+  </div>
+
+  <img src="C:\Users\ErichMack\OneDrive - Cody Pools, Inc\Attachments\Desktop\Softscape Sandbox\n8n\Hero Image\Hero1.png" alt="Hero Logo" class="hero-logo">
+
+  <form id="enhancement-form">
+    <h2>Enhancement Settings</h2>
+
+    <div class="instructions-box">
+      <strong>Instructions:</strong>
+      <ul>
+        <li>Wider angle yard and pool shots work best. Avoid overhead / "Bird's Eye" shots or close up shots.</li>
+        <li><strong>Backplane:</strong> Enter background type (e.g., Camelback Mountain, Sonoran desert, Miami downtown). Avoid obscure references.</li>
+    <li><strong>Menu:</strong> Use the dropdowns to match your rendering design.</li>
+        <li><strong>Quality:</strong> 4K is faster; 8K is larger/slower.</li>
+      </ul>
+    </div>
+
+    <div class="form-group">
+      <label for="back_plane">Back Plane</label>
+      <input type="text" id="back_plane" name="back_plane" placeholder="Enter back plane details...">
+    </div>
+
+    <div class="form-group">
+      <label for="time_of_day">Time of Day</label>
+      <select id="time_of_day" name="time_of_day">
+        <option value="High Sun With Soft Diffusion">High Sun With Soft Diffusion</option>
+        <option value="Golden Hour">Golden Hour</option>
+        <option value="Night With Moon Glow">Night With Moon Glow</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="paver_style">Paver Style</label>
+      <select id="paver_style" name="paver_style">
+        <option value="Travertine">Travertine</option>
+        <option value="Limestone">Limestone</option>
+        <option value="Marble">Marble</option>
+        <option value="Porcelain">Porcelain</option>
+        <option value="Belgard Like">Belgard Like</option>
+        <option value="Saltillo">Saltillo</option>
+        <option value="Cantera Stone">Cantera Stone</option>
+        <option value="Acrylic Cool Deck">Acrylic Cool Deck</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="paver_pattern">Paver Pattern</label>
+      <select id="paver_pattern" name="paver_pattern">
+        <option value="Grid">Grid</option>
+        <option value="Offset">Offset</option>
+        <option value="Versailles">Versailles</option>
+        <option value="Herringbone">Herringbone</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="image_quality">Image Quality</label>
+      <select id="image_quality" name="image_quality">
+        <option value="4K">4K</option>
+        <option value="8K">8K</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="images">Upload Images</label>
+      <input type="file" id="images" name="images" multiple accept="image/*" />
+    </div>
+
+    <button type="submit">Enhance Images</button>
+
+    <div class="tips-box">
+      <strong>Tips:</strong>
+      <ul>
+        <li>4-5 uploads max; 1-2 recommended for efficiency.</li>
+        <li>If an image fails, try again individually.</li>
+      </ul>
+    </div>
+  </form>
+
+  <div id="result-container">
+    <h2>Enhancement Complete</h2>
+    <div id="image-gallery" class="gallery"></div>
+    <button onclick="location.reload()" style="margin-top: 20px; background: #444;">Process New Images</button>
+  </div>
+
+  <script>
+    const form = document.getElementById('enhancement-form');
+    const overlay = document.getElementById('loading-overlay');
+    const resultContainer = document.getElementById('result-container');
+    const gallery = document.getElementById('image-gallery');
+
+    // URLs for your n8n workflows
+    const SUBMIT_URL = 'https://erichwmack.app.n8n.cloud/webhook-test/Batch_EnhancementOptionsWeb';
+    const STATUS_URL = 'https://erichwmack.app.n8n.cloud/webhook-test/check-status';
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault(); 
+      overlay.style.display = 'flex';
+
+      const formData = new FormData(form);
+
+      try {
+        // Step 1: Submit to start the job
+        const response = await fetch(SUBMIT_URL, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.ok) {
+          const { jobId } = await response.json();
+          pollStatus(jobId);
+        } else {
+          alert('Submission failed. Check n8n logs.');
+          overlay.style.display = 'none';
+        }
+
+      } catch (error) {
+        console.error('Submission Error:', error);
+        alert('Connection failed.');
+        overlay.style.display = 'none';
+      }
+    });
+
+    async function pollStatus(jobId) {
+      const interval = setInterval(async () => {
+        try {
+          const response = await fetch(`${STATUS_URL}?jobId=${jobId}`);
+          const data = await response.json();
+          
+          // Handle array vs object response from n8n
+          const job = Array.isArray(data) ? data[0] : data;
+
+          if (job && job.status === 'completed') {
+            clearInterval(interval);
+            displayResults(job.image_url);
+          }
+        } catch (err) {
+          console.error('Polling...', err);
+        }
+      }, 10000); // Check every 10 seconds
+    }
+
+    function displayResults(urlData) {
+      overlay.style.display = 'none';
+      form.style.display = 'none';
+      resultContainer.style.display = 'block';
+
+      // Split comma-separated URLs from Google Sheets
+      const urls = urlData.split(',').map(u => u.trim());
+      
+      gallery.innerHTML = urls.map(url => `
+        <a href="${url}" target="_blank">
+          <img src="${url}" class="gallery-item" alt="Enhanced Render">
+        </a>
+      `).join('');
+    }
+  </script>
+
+</body>
+</html>
