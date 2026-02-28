@@ -7,7 +7,7 @@ const app = express();
 const upload = multer(); // Handles the image uploads from your form
 
 // Base URL for n8n (easier to maintain)
-const N8N_BASE_URL = 'https://imageenhancement-production.up.railway.app';
+const N8N_BASE_URL = 'https://n8n-production-9092.up.railway.app';
 
 // 1. Serve your static HTML files from the root
 app.use(express.static('.'));
