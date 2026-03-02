@@ -55,7 +55,7 @@ app.post('/api/enhance', upload.array('images'), async (req, res) => {
 // 3. Status Proxy (for polling)
 app.get('/api/status', async (req, res) => {
   try {
-    const statusUrl = `${N8N_BASE_URL}/webhook/check-status?jobId=${req.query.jobId}`;
+    const statusUrl = `${N8N_BASE_URL}/webhook/check-status?job_id=${req.query.jobId}`;
     const response = await axios.get(statusUrl);
     return res.status(response.status).json(response.data);
   } catch (error) {
