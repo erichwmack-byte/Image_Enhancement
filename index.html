@@ -16,7 +16,6 @@
       padding: 40px;
     }
 
-    /* Hero Logo Styling */
     .hero-logo {
       width: 575px; 
       height: auto;
@@ -55,14 +54,8 @@
       color: #999;
     }
 
-    ul {
-      margin: 8px 0 0 18px;
-      padding: 0;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-    }
+    ul { margin: 8px 0 0 18px; padding: 0; }
+    .form-group { margin-bottom: 20px; }
 
     label {
       display: block;
@@ -97,16 +90,9 @@
       margin-top: 10px;
     }
 
-    button:hover {
-      background: #0056b3;
-    }
+    button:hover { background: #0056b3; }
+    h2 { margin-top: 0; text-align: center; }
 
-    h2 {
-      margin-top: 0;
-      text-align: center;
-    }
-
-    /* GALLERY STYLING */
     .gallery {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -120,7 +106,6 @@
       border: 1px solid #444;
     }
 
-    /* LOADING OVERLAY STYLES */
     #loading-overlay {
       position: fixed;
       top: 0;
@@ -173,7 +158,11 @@
   <div id="loading-overlay">
     <div class="spinner"></div>
     <div class="loading-text">Analyzing & Enhancing...</div>
-    <div class="loading-subtext">Enhancing your renderings into luxury-grade presentation visuals… Each Image can take 1-2mins. At 3mins the operation will timeout. Go back and try again with less images.</div>
+    <div class="loading-subtext">
+      Enhancing your renderings into luxury-grade presentation visuals…
+      Each Image can take 1-2mins. At 3mins the operation will timeout.
+      Go back and try again with less images.
+    </div>
   </div>
 
   <img src="assets/Hero1.png" alt="Hero Logo" class="hero-logo">
@@ -186,7 +175,7 @@
       <ul>
         <li>Wider angle yard and pool shots work best. Avoid overhead / "Bird's Eye" shots or close up shots.</li>
         <li><strong>Backplane:</strong> Enter background type (e.g., Camelback Mountain, Sonoran desert, Miami downtown). Avoid obscure references.</li>
-    <li><strong>Menu:</strong> Use the dropdowns to match your rendering design.</li>
+        <li><strong>Menu:</strong> Use the dropdowns to match your rendering design.</li>
         <li><strong>Quality:</strong> 4K is faster; 8K is larger/slower.</li>
       </ul>
     </div>
@@ -259,82 +248,79 @@
     <button onclick="location.reload()" style="margin-top: 20px; background: #444;">Process New Images</button>
   </div>
 
-  <script>
-    const form = document.getElementById('enhancement-form');
-    const overlay = document.getElementById('loading-overlay');
-    const resultContainer = document.getElementById('result-container');
-    const gallery = document.getElementById('image-gallery');
+<script>
+const form = document.getElementById('enhancement-form');
+const overlay = document.getElementById('loading-overlay');
+const resultContainer = document.getElementById('result-container');
+const gallery = document.getElementById('image-gallery');
 
-    // URLs for your n8n workflows
-    const SUBMIT_URL = 'https://n8n-production-9092.up.railway.app/webhook/Batch_EnhancementOptionsWeb';
-    const STATUS_URL = '/api/status';
+const SUBMIT_URL = 'https://n8n-production-9092.up.railway.app/webhook/Batch_EnhancementOptionsWeb';
+const STATUS_URL = '/api/status';
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault(); 
-      overlay.style.display = 'flex';
+form.addEventListener('submit', async (e) => {
+  e.preventDefault(); 
+  overlay.style.display = 'flex';
 
-      const formData = new FormData(form);
+  const formData = new FormData(form);
 
-      try {
-        // Step 1: Submit to start the job
-        const response = await fetch(SUBMIT_URL, {
-          method: 'POST',
-          body: formData
-        });
-
-        if (response.ok) {
-          const { jobId } = await response.json();
-          pollStatus(jobId);
-        } else {
-          alert('Submission failed. Check n8n logs.');
-          overlay.style.display = 'none';
-        }
-
-      } catch (error) {
-        console.error('Submission Error:', error);
-        alert('Connection failed.');
-        overlay.style.display = 'none';
-      }
+  try {
+    const response = await fetch(SUBMIT_URL, {
+      method: 'POST',
+      body: formData
     });
 
-    async function pollStatus(jobId) {
-      const interval = setInterval(async () => {
-        try {
-          const response = await fetch(`${STATUS_URL}?jobId=${jobId}`);
-          const data = await response.json();
-
-          // Handle array vs object response from n8n
-          const job = Array.isArray(data) ? data[0] : data;
-
-          if (job && job.status === 'completed') {
-            clearInterval(interval);
-            displayResults(job.image_url);
-          }
-        } catch (err) {
-          console.error('Polling...', err);
-        }
-      }, 10000); // Check every 10 seconds
-    }
-
-    function displayResults(urlData) {
+    if (response.ok) {
+      const { jobId } = await response.json();
+      pollStatus(jobId);
+    } else {
+      alert('Submission failed. Check n8n logs.');
       overlay.style.display = 'none';
-      form.style.display = 'none';
-      resultContainer.style.display = 'block';
-
-      // Split comma-separated URLs from Google Sheets
-      const urls = urlData.split(',').map(u => u.trim());
-
-      gallery.innerHTML = urls.map(url => `
-        <a href="${url}" target="_blank">
-          <img src="${url}" class="gallery-item" alt="Enhanced Render">
-        </a>
-      `).join('');
     }
-  </script>
+
+  } catch (error) {
+    console.error('Submission Error:', error);
+    alert('Connection failed.');
+    overlay.style.display = 'none';
+  }
+});
+
+async function pollStatus(jobId) {
+  const interval = setInterval(async () => {
+    try {
+      const response = await fetch(`${STATUS_URL}?jobId=${jobId}`);
+      const data = await response.json();
+      const job = Array.isArray(data) ? data[0] : data;
+
+      if (job && job.status === 'completed') {
+        clearInterval(interval);
+
+        // 🔥 ONLY CHANGE: redirect instead of displayResults
+        window.location.href = `${STATUS_URL}?jobId=${jobId}`;
+      }
+    } catch (err) {
+      console.error('Polling...', err);
+    }
+  }, 10000);
+}
+
+function displayResults(urlData) {
+  overlay.style.display = 'none';
+  form.style.display = 'none';
+  resultContainer.style.display = 'block';
+
+  const urls = urlData.split(',').map(u => u.trim());
+
+  gallery.innerHTML = urls.map(url => `
+    <a href="${url}" target="_blank">
+      <img src="${url}" class="gallery-item" alt="Enhanced Render">
+    </a>
+  `).join('');
+}
+</script>
 
 </body>
-
 </html>
+
 
 
 
