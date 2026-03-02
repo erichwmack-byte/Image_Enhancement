@@ -1,231 +1,260 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Image Enhancer Upload</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Enhancer Upload</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #111;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px;
+    }
 
-<style>
-body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: #111;
-  color: #eee;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 40px;
-}
+    .hero-logo {
+      width: 575px; 
+      height: auto;
+      margin-bottom: 20px;
+      border-radius: 8px;
+    }
 
-.hero-logo {
-  width: 575px;
-  height: auto;
-  margin-bottom: 20px;
-  border-radius: 8px;
-}
+    form, #result-container {
+      background: #222;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      width: 100%;
+      max-width: 500px;
+    }
 
-form {
-  background: #222;
-  padding: 30px;
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-  width: 100%;
-  max-width: 500px;
-}
+    #result-container { display: none; text-align: center; }
 
-.form-group {
-  margin-bottom: 20px;
-}
+    .instructions-box {
+      background: #2a2a2a;
+      border-left: 4px solid #007bff;
+      padding: 15px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #ccc;
+    }
 
-label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: bold;
-  color: #bbb;
-}
+    .tips-box {
+      background: #1a1a1a;
+      border: 1px dashed #444;
+      padding: 15px;
+      margin-top: 20px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #999;
+    }
 
-input[type="text"], 
-select, 
-input[type="file"] {
-  width: 100%;
-  padding: 10px;
-  background: #333;
-  border: 1px solid #444;
-  border-radius: 5px;
-  color: #fff;
-  box-sizing: border-box;
-}
+    ul { margin: 8px 0 0 18px; padding: 0; }
 
-button {
-  width: 100%;
-  padding: 15px;
-  font-size: 18px;
-  font-weight: bold;
-  background: #007bff;
-  border: none;
-  border-radius: 5px;
-  color: white;
-  cursor: pointer;
-  transition: background 0.3s;
-  margin-top: 10px;
-}
+    .form-group { margin-bottom: 20px; }
 
-button:hover {
-  background: #0056b3;
-}
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: bold;
+      color: #bbb;
+    }
 
-#loading-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0,0,0,0.9);
-  backdrop-filter: blur(10px);
-  z-index: 10000;
-  display: none;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  text-align: center;
-}
+    input[type="text"], select, input[type="file"] {
+      width: 100%;
+      padding: 10px;
+      background: #333;
+      border: 1px solid #444;
+      border-radius: 5px;
+      color: #fff;
+      box-sizing: border-box;
+    }
 
-.spinner {
-  width: 70px;
-  height: 70px;
-  border: 6px solid #333;
-  border-top: 6px solid #007bff;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 25px;
-}
+    button {
+      width: 100%;
+      padding: 15px;
+      font-size: 18px;
+      font-weight: bold;
+      background: #007bff;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      cursor: pointer;
+      transition: background 0.3s;
+      margin-top: 10px;
+    }
 
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
+    button:hover { background: #0056b3; }
 
-.loading-text {
-  font-size: 22px;
-  font-weight: bold;
-}
+    h2 { margin-top: 0; text-align: center; }
 
-.loading-subtext {
-  font-size: 14px;
-  color: #888;
-  margin-top: 12px;
-  max-width: 300px;
-}
-</style>
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-top: 20px;
+    }
+
+    .gallery-item {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #444;
+    }
+
+    #loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      backdrop-filter: blur(10px);
+      z-index: 10000;
+      display: none; 
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+    }
+
+    .spinner {
+      width: 70px;
+      height: 70px;
+      border: 6px solid #333;
+      border-top: 6px solid #007bff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 25px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .loading-text {
+      font-size: 22px;
+      font-weight: bold;
+      color: #fff;
+      letter-spacing: 1px;
+    }
+
+    .loading-subtext {
+      font-size: 14px;
+      color: #888;
+      margin-top: 12px;
+      max-width: 300px;
+      line-height: 1.4;
+    }
+  </style>
 </head>
-
 <body>
 
-<div id="loading-overlay">
-  <div class="spinner"></div>
-  <div class="loading-text">Analyzing & Enhancing...</div>
-  <div class="loading-subtext">
-    Enhancing your renderings into luxury-grade visuals.  
-    Each image can take 1–2 minutes.
-  </div>
-</div>
-
-<img src="assets/Hero1.png" alt="Hero Logo" class="hero-logo">
-
-<form id="enhancement-form">
-  <h2>Enhancement Settings</h2>
-
-  <div class="form-group">
-    <label>Back Plane</label>
-    <input type="text" name="back_plane">
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div class="loading-text">Analyzing & Enhancing...</div>
+    <div class="loading-subtext">
+      Enhancing your renderings into luxury-grade presentation visuals… 
+      Each Image can take 1-2mins. At 3mins the operation will timeout. 
+      Go back and try again with less images.
+    </div>
   </div>
 
-  <div class="form-group">
-    <label>Time of Day</label>
-    <select name="time_of_day">
-      <option value="High Sun With Soft Diffusion">High Sun</option>
-      <option value="Golden Hour">Golden Hour</option>
-      <option value="Night With Moon Glow">Night</option>
-    </select>
-  </div>
+  <img src="assets/Hero1.png" alt="Hero Logo" class="hero-logo">
 
-  <div class="form-group">
-    <label>Upload Images</label>
-    <input type="file" name="images" multiple accept="image/*">
-  </div>
+  <form id="enhancement-form">
+    <h2>Enhancement Settings</h2>
 
-  <button type="submit">Enhance Images</button>
-</form>
+    <div class="instructions-box">
+      <strong>Instructions:</strong>
+      <ul>
+        <li>Wider angle yard and pool shots work best. Avoid overhead shots.</li>
+        <li><strong>Backplane:</strong> Enter background type.</li>
+        <li><strong>Menu:</strong> Use dropdowns to match your rendering.</li>
+        <li><strong>Quality:</strong> 4K is faster; 8K is larger/slower.</li>
+      </ul>
+    </div>
 
-<script>
-const form = document.getElementById('enhancement-form');
-const overlay = document.getElementById('loading-overlay');
+    <div class="form-group">
+      <label for="back_plane">Back Plane</label>
+      <input type="text" id="back_plane" name="back_plane">
+    </div>
 
-const SUBMIT_URL = 'https://n8n-production-9092.up.railway.app/webhook/Batch_EnhancementOptionsWeb';
-const STATUS_URL = '/api/status';
+    <div class="form-group">
+      <label for="images">Upload Images</label>
+      <input type="file" id="images" name="images" multiple accept="image/*" />
+    </div>
 
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  overlay.style.display = 'flex';
+    <button type="submit">Enhance Images</button>
+  </form>
 
-  const formData = new FormData(form);
+  <script>
+    const form = document.getElementById('enhancement-form');
+    const overlay = document.getElementById('loading-overlay');
 
-  try {
-    const response = await fetch(SUBMIT_URL, {
-      method: 'POST',
-      body: formData
+    const SUBMIT_URL = 'https://n8n-production-9092.up.railway.app/webhook/Batch_EnhancementOptionsWeb';
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      overlay.style.display = 'flex';
+
+      const formData = new FormData(form);
+
+      try {
+        const response = await fetch(SUBMIT_URL, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const jobId = data.job_id || data.jobId;
+          checkStatus(jobId);
+        } else {
+          overlay.style.display = 'none';
+          alert('Submission failed.');
+        }
+      } catch (error) {
+        overlay.style.display = 'none';
+        alert('Connection failed.');
+      }
     });
 
-    const data = await response.json();
+    // ✅ NEW POLLING FUNCTION (ONLY CHANGE)
+    async function checkStatus(jobId) {
+      const interval = setInterval(async () => {
+        try {
+          const res = await fetch(`/status-check?job_id=${jobId}`);
 
-    if (!data.job_id) {
-      alert("Job ID missing from response");
-      overlay.style.display = 'none';
-      return;
+          const contentType = res.headers.get("content-type");
+
+          if (contentType && contentType.includes("text/html")) {
+            clearInterval(interval);
+            window.location.href = `/status-check?job_id=${jobId}`;
+            return;
+          }
+
+          const data = await res.json();
+
+          if (data.status === "completed") {
+            clearInterval(interval);
+            window.location.href = `/status-check?job_id=${jobId}`;
+          }
+
+        } catch (err) {
+          console.log("Polling...");
+        }
+      }, 10000);
     }
-
-    pollStatus(data.job_id);
-
-  } catch (err) {
-    console.error(err);
-    alert("Submission failed");
-    overlay.style.display = 'none';
-  }
-});
-
-function pollStatus(jobId) {
-
-  const interval = setInterval(async () => {
-
-    try {
-      const res = await fetch(`${STATUS_URL}?job_id=${jobId}`);
-      
-      const contentType = res.headers.get("content-type");
-
-      // If HTML comes back → redirect immediately
-      if (contentType && contentType.includes("text/html")) {
-        clearInterval(interval);
-        window.location.href = `${STATUS_URL}?job_id=${jobId}`;
-        return;
-      }
-
-      // Otherwise parse JSON
-      const data = await res.json();
-
-      if (data.status === "completed") {
-        clearInterval(interval);
-        window.location.href = `${STATUS_URL}?job_id=${jobId}`;
-      }
-
-    } catch (err) {
-      console.log("Polling...");
-    }
-
-  }, 10000);
-}
-</script>
+  </script>
 
 </body>
 </html>
+
 
 
 
