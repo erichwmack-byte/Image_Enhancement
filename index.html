@@ -291,8 +291,10 @@ async function pollStatus(jobId) {
       const response = await fetch(`${STATUS_URL}?jobId=${jobId}`);
       const contentType = response.headers.get("content-type");
 
+      // 1. Check for HTML Gallery (The Success Path)
       if (contentType && contentType.includes("text/html")) {
         const htmlContent = await response.text();
+        console.log("✅ Success: HTML Gallery Received"); 
         clearInterval(interval);
         overlay.style.display = 'none';
         // This replaces the loading screen with the gallery n8n sends
@@ -300,12 +302,19 @@ async function pollStatus(jobId) {
         return;
       }
       
-      // If it's still JSON, n8n is likely sending {"status": "processing"}
+      // 2. Check for JSON Status (The Processing Path)
       const data = await response.json();
-      console.log("Job Status:", data.status);
+      
+      // 🔥 THE NEW DEBUG LINE: 
+      // This will print the full object to your console so you can check for camelCase errors.
+      console.log("📡 N8N Status Update:", data); 
+      
+      if (data.status === 'completed') {
+          console.log("🏁 Job is 'completed' in Sheet, but n8n didn't send HTML. Check the 'If' node.");
+      }
 
     } catch (err) {
-      console.error('Polling error:', err);
+      console.error('⚠️ Polling error:', err);
     }
   }, 10000); // Polls every 10 seconds
 }
@@ -327,6 +336,7 @@ function displayResults(urlData) {
 
 </body>
 </html>
+
 
 
 
