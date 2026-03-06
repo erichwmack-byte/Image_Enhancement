@@ -254,7 +254,8 @@ const overlay = document.getElementById('loading-overlay');
 const resultContainer = document.getElementById('result-container');
 const gallery = document.getElementById('image-gallery');
 
-const SUBMIT_URL = 'https://courteous-solace-production-413f.up.railway.app/webhook/Batch_EnhancementOptionsWeb';
+// ✅ CHANGE: Use the proxy endpoint instead of hitting n8n directly
+const SUBMIT_URL = '/api/enhance'; 
 const STATUS_URL = '/api/status';
 
 form.addEventListener('submit', async (e) => {
@@ -320,6 +321,7 @@ function displayResults(urlData) {
 
 </body>
 </html>
+
 
 
 
