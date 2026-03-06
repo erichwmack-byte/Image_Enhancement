@@ -59,4 +59,11 @@ app.get('/api/status', async (req, res) => {
     return res.status(response.status).json(response.data);
   } catch (error) {
     console.error('Status Error:', error.response?.data || error.message);
-    return res.
+    return res.status(500).json({ error: 'Status check failed' });
+  }
+});
+
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
