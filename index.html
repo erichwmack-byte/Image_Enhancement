@@ -288,19 +288,26 @@ form.addEventListener('submit', async (e) => {
 async function pollStatus(jobId) {
   const interval = setInterval(async () => {
     try {
-      const response = await fetch(`${STATUS_URL}?jobId=${jobId}`)
-const contentType = response.headers.get("content-type");
-if (contentType && contentType.includes("text/html")) {
-    const htmlContent = await response.text();
-    clearInterval(interval);
-    overlay.style.display = 'none';
-    document.body.innerHTML = htmlContent; // Injects the full gallery
-    return;
-}
+      const response = await fetch(`${STATUS_URL}?jobId=${jobId}`);
+      const contentType = response.headers.get("content-type");
+
+      if (contentType && contentType.includes("text/html")) {
+        const htmlContent = await response.text();
+        clearInterval(interval);
+        overlay.style.display = 'none';
+        // This replaces the loading screen with the gallery n8n sends
+        document.body.innerHTML = htmlContent; 
+        return;
+      }
+      
+      // If it's still JSON, n8n is likely sending {"status": "processing"}
+      const data = await response.json();
+      console.log("Job Status:", data.status);
+
     } catch (err) {
-      console.error('Polling...', err);
+      console.error('Polling error:', err);
     }
-  }, 10000);
+  }, 10000); // Polls every 10 seconds
 }
 
 function displayResults(urlData) {
@@ -320,6 +327,7 @@ function displayResults(urlData) {
 
 </body>
 </html>
+
 
 
 
