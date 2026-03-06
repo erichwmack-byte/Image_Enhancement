@@ -289,15 +289,14 @@ async function pollStatus(jobId) {
   const interval = setInterval(async () => {
     try {
       const response = await fetch(`${STATUS_URL}?jobId=${jobId}`)
-      const data = await response.json();
-      const job = Array.isArray(data) ? data[0] : data;
-
-      if (job && job.status === 'completed') {
-        clearInterval(interval);
-
-        // 🔥 ONLY CHANGE: redirect instead of displayResults
-        window.location.href = `${STATUS_URL}?jobId=${jobId}`;
-      }
+const contentType = response.headers.get("content-type");
+if (contentType && contentType.includes("text/html")) {
+    const htmlContent = await response.text();
+    clearInterval(interval);
+    overlay.style.display = 'none';
+    document.body.innerHTML = htmlContent; // Injects the full gallery
+    return;
+}
     } catch (err) {
       console.error('Polling...', err);
     }
@@ -321,6 +320,7 @@ function displayResults(urlData) {
 
 </body>
 </html>
+
 
 
 
