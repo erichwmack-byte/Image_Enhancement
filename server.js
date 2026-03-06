@@ -56,6 +56,10 @@ app.get('/api/status', async (req, res) => {
   try {
     const statusUrl = `${N8N_BASE_URL}/webhook/check-status?jobId=${req.query.jobId}`;
     const response = await axios.get(statusUrl);
+    
+    // Force the browser to not cache this status check
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    
     return res.status(response.status).json(response.data);
   } catch (error) {
     console.error('Status Error:', error.response?.data || error.message);
