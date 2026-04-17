@@ -1,10 +1,8 @@
-<!-- AI agent was here -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Image Enhancer Upload</title>
   <title>Image Enhancer Upload</title>
   <style>
     body {
@@ -94,19 +92,6 @@
     button:hover { background: #0056b3; }
     h2 { margin-top: 0; text-align: center; }
 
-    .gallery {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 15px;
-      margin-top: 20px;
-    }
-
-    .gallery-item {
-      width: 100%;
-      border-radius: 8px;
-      border: 1px solid #444;
-    }
-
     #loading-overlay {
       position: fixed;
       top: 0;
@@ -161,8 +146,7 @@
     <div class="loading-text">Analyzing & Enhancing...</div>
     <div class="loading-subtext">
       Enhancing your renderings into luxury-grade presentation visuals…
-      Each Image can take 1-2mins. At 3mins the operation will timeout.
-      Go back and try again with less images.
+      Each image can take 1-2 mins.
     </div>
   </div>
 
@@ -174,16 +158,15 @@
     <div class="instructions-box">
       <strong>Instructions:</strong>
       <ul>
-        <li>Wider angle yard and pool shots work best. Avoid overhead / "Bird's Eye" shots or close up shots.</li>
-        <li><strong>Backplane:</strong> Enter background type (e.g., Camelback Mountain, Sonoran desert, Miami downtown). Avoid obscure references.</li>
-        <li><strong>Menu:</strong> Use the dropdowns to match your rendering design.</li>
-        <li><strong>Quality:</strong> 4K is faster; 8K is larger/slower.</li>
+        <li>Wider angle yard shots work best. Avoid overhead shots.</li>
+        <li><strong>Backplane:</strong> Enter background (e.g., Camelback Mountain).</li>
+        <li><strong>Quality:</strong> 4K is faster; 8K is higher fidelity.</li>
       </ul>
     </div>
 
     <div class="form-group">
       <label for="back_plane">Back Plane</label>
-      <input type="text" id="back_plane" name="back_plane" placeholder="Enter back plane details...">
+      <input type="text" id="back_plane" name="back_plane" placeholder="e.g. Sonoran Desert Landscape">
     </div>
 
     <div class="form-group">
@@ -202,10 +185,6 @@
         <option value="Limestone">Limestone</option>
         <option value="Marble">Marble</option>
         <option value="Porcelain">Porcelain</option>
-        <option value="Belgard Like">Belgard Like</option>
-        <option value="Saltillo">Saltillo</option>
-        <option value="Cantera Stone">Cantera Stone</option>
-        <option value="Acrylic Cool Deck">Acrylic Cool Deck</option>
       </select>
     </div>
 
@@ -237,25 +216,17 @@
     <div class="tips-box">
       <strong>Tips:</strong>
       <ul>
-        <li>4-5 uploads max; 1-2 recommended for efficiency.</li>
-        <li>If an image fails, try again individually.</li>
+        <li>1-2 images recommended for faster results.</li>
+        <li>Check Railway logs if the process hangs.</li>
       </ul>
     </div>
   </form>
 
-  <div id="result-container">
-    <h2>Enhancement Complete</h2>
-    <div id="image-gallery" class="gallery"></div>
-    <button onclick="location.reload()" style="margin-top: 20px; background: #444;">Process New Images</button>
-  </div>
-
 <script>
 const form = document.getElementById('enhancement-form');
 const overlay = document.getElementById('loading-overlay');
-const resultContainer = document.getElementById('result-container');
-const gallery = document.getElementById('image-gallery');
 
-// ✅ CHANGE: Use the proxy endpoint instead of hitting n8n directly
+// Using your local proxy endpoints
 const SUBMIT_URL = '/api/enhance'; 
 const STATUS_URL = '/api/status';
 
@@ -273,9 +244,10 @@ form.addEventListener('submit', async (e) => {
 
     if (response.ok) {
       const { jobId } = await response.json();
+      console.log("Job ID Created:", jobId);
       pollStatus(jobId);
     } else {
-      alert('Submission failed. Check n8n logs.');
+      alert('Submission failed. Check your Node.js server logs.');
       overlay.style.display = 'none';
     }
 
@@ -290,51 +262,32 @@ async function pollStatus(jobId) {
   const interval = setInterval(async () => {
     try {
       const response = await fetch(`${STATUS_URL}?jobId=${jobId}`);
-      const contentType = response.headers.get("content-type");
+      const data = await response.json();
+      
+      console.log("📡 Status Update:", data.status); 
 
-      // 1. Check for HTML Gallery (The Success Path)
-      if (contentType && contentType.includes("text/html")) {
-        const htmlContent = await response.text();
-        console.log("✅ Success: HTML Gallery Received"); 
+      // If job is completed and contains the HTML gallery data
+      if (data.status === 'completed' && data.data && data.data.html) {
+        console.log("✅ Gallery Received. Rendering..."); 
         clearInterval(interval);
+        
         overlay.style.display = 'none';
-        // This replaces the loading screen with the gallery n8n sends
-        document.body.innerHTML = htmlContent; 
+        
+        // Replaces the entire page with the n8n-generated HTML Gallery
+        document.body.innerHTML = data.data.html; 
         return;
       }
 
-      // If it's still JSON, n8n is likely sending {"status": "processing"}
-      // 2. Check for JSON Status (The Processing Path)
-      const data = await response.json();
-      console.log("Job Status:", data.status);
-      
-      // 🔥 THE NEW DEBUG LINE: 
-      // This will print the full object to your console so you can check for camelCase errors.
-      console.log("📡 N8N Status Update:", data); 
-      
-      if (data.status === 'completed') {
-          console.log("🏁 Job is 'completed' in Sheet, but n8n didn't send HTML. Check the 'If' node.");
+      if (data.status === 'failed') {
+        clearInterval(interval);
+        overlay.style.display = 'none';
+        alert('Process failed in n8n. Check n8n executions.');
       }
 
     } catch (err) {
-      console.error('Polling error:', err);
       console.error('⚠️ Polling error:', err);
     }
   }, 10000); // Polls every 10 seconds
-}
-
-function displayResults(urlData) {
-  overlay.style.display = 'none';
-  form.style.display = 'none';
-  resultContainer.style.display = 'block';
-
-  const urls = urlData.split(',').map(u => u.trim());
-
-  gallery.innerHTML = urls.map(url => `
-    <a href="${url}" target="_blank">
-      <img src="${url}" class="gallery-item" alt="Enhanced Render">
-    </a>
-  `).join('');
 }
 </script>
 
