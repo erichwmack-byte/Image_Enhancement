@@ -227,7 +227,6 @@
 const form = document.getElementById('enhancement-form');
 const overlay = document.getElementById('loading-overlay');
 
-// Using your local proxy endpoints
 const SUBMIT_URL = '/api/enhance'; 
 const STATUS_URL = '/api/status';
 
@@ -265,17 +264,21 @@ async function pollStatus(jobId) {
       const response = await fetch(`${STATUS_URL}?jobId=${jobId}`);
       const data = await response.json();
       
-      console.log("📡 Status Update:", data.status); 
+      console.log("📡 Full response:", JSON.stringify(data));
 
-      // If job is completed and contains the HTML gallery data
-      if (data.status === 'completed' && data.data && data.data.html) {
-        console.log("✅ Gallery Received. Rendering..."); 
+      if (data.status === 'completed') {
         clearInterval(interval);
-        
         overlay.style.display = 'none';
         
-        // Replaces the entire page with the n8n-generated HTML Gallery
-        document.body.innerHTML = data.data.html; 
+        const html = data.gallery_html || (data.data && data.data.html) || data.html;
+        
+        if (html) {
+          document.open();
+          document.write(html);
+          document.close();
+        } else {
+          alert('Completed but no gallery found. Check console.');
+        }
         return;
       }
 
@@ -286,9 +289,9 @@ async function pollStatus(jobId) {
       }
 
     } catch (err) {
-      console.error('⚠️ Polling error:', err);
+      console.error('Polling error:', err);
     }
-  }, 10000); // Polls every 10 seconds
+  }, 10000);
 }
 </script>
 
