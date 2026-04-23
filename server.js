@@ -4,7 +4,6 @@ const FormData = require('form-data');
 const multer = require('multer');
 const app = express();
 const upload = multer();
-
 const N8N_BASE_URL = 'https://courteous-solace-production-413f.up.railway.app';
 
 // 1. Middleware
@@ -72,7 +71,7 @@ app.get('/api/status', async (req, res) => {
 // 4. Animate Proxy - Sends image to animation workflow
 app.post('/api/animate', async (req, res) => {
   try {
-    const n8nUrl = `${N8N_BASE_URL}/webhook/animate-image`;
+    const n8nUrl = `${N8N_BASE_URL}/webhook/animate_image`;
     const response = await axios.post(n8nUrl, req.body, {
       headers: { 'Content-Type': 'application/json' }
     });
