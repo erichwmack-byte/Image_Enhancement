@@ -1,10 +1,9 @@
 <!DOCTYPE html>
-<!-- AI agent was here -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Image Enhancer Upload</title>
+  <title>Image Enhancer</title>
   <style>
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -14,15 +13,182 @@
       flex-direction: column;
       align-items: center;
       padding: 40px;
+      min-height: 100vh;
+      margin: 0;
     }
 
     .hero-logo {
-      width: 575px; 
+      width: 575px;
       height: auto;
       margin-bottom: 20px;
       border-radius: 8px;
     }
 
+    /* ── Auth Panel ── */
+    #auth-panel {
+      background: #222;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      width: 100%;
+      max-width: 400px;
+    }
+
+    #auth-panel h2 { margin-top: 0; text-align: center; }
+
+    .auth-tabs {
+      display: flex;
+      margin-bottom: 24px;
+      border-bottom: 2px solid #333;
+    }
+
+    .auth-tab {
+      flex: 1;
+      padding: 10px;
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 15px;
+      cursor: pointer;
+      margin-top: 0;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.2s;
+    }
+
+    .auth-tab.active {
+      color: #007bff;
+      border-bottom-color: #007bff;
+      font-weight: bold;
+    }
+
+    .auth-input {
+      width: 100%;
+      padding: 12px;
+      background: #333;
+      border: 1px solid #444;
+      border-radius: 5px;
+      color: #fff;
+      box-sizing: border-box;
+      margin-bottom: 14px;
+      font-size: 14px;
+    }
+
+    .auth-input:focus { outline: none; border-color: #007bff; }
+
+    .auth-error {
+      color: #ff4444;
+      font-size: 13px;
+      margin-bottom: 12px;
+      display: none;
+    }
+
+    /* ── Credit Badge ── */
+    #credit-bar {
+      position: fixed;
+      top: 16px;
+      right: 20px;
+      display: none;
+      align-items: center;
+      gap: 12px;
+      background: #222;
+      border: 1px solid #333;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 13px;
+      z-index: 1000;
+    }
+
+    #credit-count {
+      color: #007bff;
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    .btn-buy {
+      background: #28a745;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+
+    .btn-buy:hover { background: #1e7e34; }
+
+    .btn-logout {
+      background: none;
+      color: #888;
+      border: 1px solid #444;
+      padding: 6px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .btn-logout:hover { color: #fff; border-color: #666; }
+
+    /* ── Credit Purchase Modal ── */
+    #purchase-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.85);
+      z-index: 9999;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-box {
+      background: #222;
+      border-radius: 12px;
+      padding: 30px;
+      width: 100%;
+      max-width: 420px;
+      border: 1px solid #333;
+    }
+
+    .modal-box h3 { margin-top: 0; text-align: center; color: #fff; }
+
+    .pack-option {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+
+    .pack-option:hover { border-color: #007bff; }
+
+    .pack-name { font-weight: bold; font-size: 15px; }
+    .pack-credits { color: #007bff; font-size: 13px; margin-top: 3px; }
+    .pack-price { font-size: 22px; font-weight: bold; color: #28a745; }
+
+    .btn-close-modal {
+      width: 100%;
+      background: #333;
+      color: #888;
+      border: none;
+      padding: 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-top: 8px;
+      font-size: 13px;
+    }
+
+    .btn-close-modal:hover { background: #444; color: #fff; }
+
+    /* ── Enhancement Form (existing styles preserved) ── */
     form, #result-container {
       background: #222;
       padding: 30px;
@@ -32,6 +198,7 @@
       max-width: 500px;
     }
 
+    #enhancement-form { display: none; }
     #result-container { display: none; text-align: center; }
 
     .instructions-box {
@@ -64,8 +231,8 @@
       color: #bbb;
     }
 
-    input[type="text"], 
-    select, 
+    input[type="text"],
+    select,
     input[type="file"] {
       width: 100%;
       padding: 10px;
@@ -76,7 +243,7 @@
       box-sizing: border-box;
     }
 
-    button {
+    button[type="submit"] {
       width: 100%;
       padding: 15px;
       font-size: 18px;
@@ -90,19 +257,18 @@
       margin-top: 10px;
     }
 
-    button:hover { background: #0056b3; }
+    button[type="submit"]:hover { background: #0056b3; }
     h2 { margin-top: 0; text-align: center; }
 
+    /* ── Loading Overlay ── */
     #loading-overlay {
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.9);
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.9);
       backdrop-filter: blur(10px);
       z-index: 10000;
-      display: none; 
+      display: none;
       flex-direction: column;
       justify-content: center;
       align-items: center;
@@ -124,177 +290,32 @@
       100% { transform: rotate(360deg); }
     }
 
-    .loading-text {
-      font-size: 22px;
-      font-weight: bold;
-      color: #fff;
-      letter-spacing: 1px;
-    }
-
-    .loading-subtext {
-      font-size: 14px;
-      color: #888;
-      margin-top: 12px;
-      max-width: 300px;
-      line-height: 1.4;
-    }
+    .loading-text { font-size: 22px; font-weight: bold; color: #fff; letter-spacing: 1px; }
+    .loading-subtext { font-size: 14px; color: #888; margin-top: 12px; max-width: 300px; line-height: 1.4; }
   </style>
 </head>
 <body>
 
-  <div id="loading-overlay">
-    <div class="spinner"></div>
-    <div class="loading-text">Analyzing & Enhancing...</div>
-    <div class="loading-subtext">
-      Enhancing your renderings into luxury-grade presentation visuals…
-      Each image can take 1-2 mins.
-    </div>
-  </div>
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text">Analyzing & Enhancing...</div>
+  <div class="loading-subtext">Enhancing your renderings into luxury-grade presentation visuals… Each image can take 1-2 mins.</div>
+</div>
 
-  <img src="assets/Hero1.png" alt="Hero Logo" class="hero-logo">
+<!-- Credit Bar (top right when logged in) -->
+<div id="credit-bar">
+  <span>⚡ <span id="credit-count">0</span> credits</span>
+  <button class="btn-buy" onclick="openPurchaseModal()">+ Buy Credits</button>
+  <button class="btn-logout" onclick="logout()">Log Out</button>
+</div>
 
-  <form id="enhancement-form">
-    <h2>Enhancement Settings</h2>
-
-    <div class="instructions-box">
-      <strong>Instructions:</strong>
-      <ul>
-        <li>Wider angle yard shots work best. Avoid overhead shots.</li>
-        <li><strong>Backplane:</strong> Enter background (e.g., Camelback Mountain, Houston Residential).</li>
-        <li><strong>Quality:</strong> 4K is faster; 8K is higher fidelity.</li>
-      </ul>
-    </div>
-
-    <div class="form-group">
-      <label for="back_plane">Back Plane</label>
-      <input type="text" id="back_plane" name="back_plane" placeholder="e.g. Sonoran Desert Landscape">
-    </div>
-
-    <div class="form-group">
-      <label for="time_of_day">Time of Day</label>
-      <select id="time_of_day" name="time_of_day">
-        <option value="High Sun With Soft Diffusion">High Sun With Soft Diffusion</option>
-        <option value="Golden Hour">Golden Hour</option>
-        <option value="Night With Moon Glow">Night With Moon Glow</option>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label for="paver_style">Paver Style</label>
-      <select id="paver_style" name="paver_style">
-        <option value="Travertine">Travertine</option>
-        <option value="Limestone">Limestone</option>
-        <option value="Marble">Marble</option>
-        <option value="Porcelain">Porcelain</option>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label for="paver_pattern">Paver Pattern</label>
-      <select id="paver_pattern" name="paver_pattern">
-        <option value="Grid">Grid</option>
-        <option value="Offset">Offset</option>
-        <option value="Versailles">Versailles</option>
-        <option value="Herringbone">Herringbone</option>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label for="image_quality">Image Quality</label>
-      <select id="image_quality" name="image_quality">
-        <option value="4K">4K</option>
-        <option value="8K">8K</option>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label for="images">Upload Images</label>
-      <input type="file" id="images" name="images" multiple accept="image/*" />
-    </div>
-
-    <button type="submit">Enhance Images</button>
-
-    <div class="tips-box">
-      <strong>Tips:</strong>
-      <ul>
-        <li>Each image takes about 1min to process.</li>
-        <li>Each Image = 1 credit</li>
-        <li>Each Video = 4 credits</li>
-      </ul>
-    </div>
-  </form>
-
-<script>
-const form = document.getElementById('enhancement-form');
-const overlay = document.getElementById('loading-overlay');
-
-const SUBMIT_URL = '/api/enhance'; 
-const STATUS_URL = '/api/status';
-
-form.addEventListener('submit', async (e) => {
-  e.preventDefault(); 
-  overlay.style.display = 'flex';
-
-  const formData = new FormData(form);
-
-  try {
-    const response = await fetch(SUBMIT_URL, {
-      method: 'POST',
-      body: formData
-    });
-
-    if (response.ok) {
-      const { jobId } = await response.json();
-      console.log("Job ID Created:", jobId);
-      pollStatus(jobId);
-    } else {
-      alert('Submission failed. Check your Node.js server logs.');
-      overlay.style.display = 'none';
-    }
-
-  } catch (error) {
-    console.error('Submission Error:', error);
-    alert('Connection failed.');
-    overlay.style.display = 'none';
-  }
-});
-
-async function pollStatus(jobId) {
-  const interval = setInterval(async () => {
-    try {
-      const response = await fetch(`${STATUS_URL}?jobId=${jobId}`);
-      const data = await response.json();
-      
-      console.log("📡 Full response:", JSON.stringify(data));
-
-      if (data.status === 'completed') {
-        clearInterval(interval);
-        overlay.style.display = 'none';
-        
-        const html = data.gallery_html || (data.data && data.data.html) || data.html;
-        
-        if (html) {
-          document.open();
-          document.write(html);
-          document.close();
-        } else {
-          alert('Completed but no gallery found. Check console.');
-        }
-        return;
-      }
-
-      if (data.status === 'failed') {
-        clearInterval(interval);
-        overlay.style.display = 'none';
-        alert('Process failed in n8n. Check n8n executions.');
-      }
-
-    } catch (err) {
-      console.error('Polling error:', err);
-    }
-  }, 10000);
-}
-</script>
-
-</body>
-</html>
+<!-- Purchase Modal -->
+<div id="purchase-modal">
+  <div class="modal-box">
+    <h3>Buy Credits</h3>
+    <div class="pack-option" onclick="purchasePack('starter')">
+      <div>
+        <div class="pack-name">Starter Pack</div>
+        <div class="pack-credits">40 credits · 40 images or 10 videos</div>
+      </div>
+      <div class="pack-price">$25</div>
