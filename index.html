@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Image Enhancer</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -24,7 +25,6 @@
       border-radius: 8px;
     }
 
-    /* ── Auth Panel ── */
     #auth-panel {
       background: #222;
       padding: 30px;
@@ -83,7 +83,6 @@
       display: none;
     }
 
-    /* ── Credit Badge ── */
     #credit-bar {
       position: fixed;
       top: 16px;
@@ -132,7 +131,6 @@
 
     .btn-logout:hover { color: #fff; border-color: #666; }
 
-    /* ── Credit Purchase Modal ── */
     #purchase-modal {
       display: none;
       position: fixed;
@@ -169,7 +167,6 @@
     }
 
     .pack-option:hover { border-color: #007bff; }
-
     .pack-name { font-weight: bold; font-size: 15px; }
     .pack-credits { color: #007bff; font-size: 13px; margin-top: 3px; }
     .pack-price { font-size: 22px; font-weight: bold; color: #28a745; }
@@ -188,7 +185,6 @@
 
     .btn-close-modal:hover { background: #444; color: #fff; }
 
-    /* ── Enhancement Form (existing styles preserved) ── */
     form, #result-container {
       background: #222;
       padding: 30px;
@@ -260,7 +256,6 @@
     button[type="submit"]:hover { background: #0056b3; }
     h2 { margin-top: 0; text-align: center; }
 
-    /* ── Loading Overlay ── */
     #loading-overlay {
       position: fixed;
       top: 0; left: 0;
@@ -302,7 +297,7 @@
   <div class="loading-subtext">Enhancing your renderings into luxury-grade presentation visuals… Each image can take 1-2 mins.</div>
 </div>
 
-<!-- Credit Bar (top right when logged in) -->
+<!-- Credit Bar -->
 <div id="credit-bar">
   <span>⚡ <span id="credit-count">0</span> credits</span>
   <button class="btn-buy" onclick="openPurchaseModal()">+ Buy Credits</button>
@@ -344,19 +339,18 @@
 <div id="auth-panel">
   <h2>Welcome</h2>
   <div class="auth-tabs">
-    <button class="auth-tab active" onclick="switchTab('login')">Log In</button>
-    <button class="auth-tab" onclick="switchTab('signup')">Sign Up</button>
+    <button class="auth-tab active" onclick="switchTab('login', event)">Log In</button>
+    <button class="auth-tab" onclick="switchTab('signup', event)">Sign Up</button>
   </div>
   <div id="auth-error" class="auth-error"></div>
   <input type="email" id="auth-email" class="auth-input" placeholder="Email address" />
   <input type="password" id="auth-password" class="auth-input" placeholder="Password" />
-  <button id="auth-btn" type="button" style="width:100%;padding:15px;font-size:16px;font-weight:bold;background:#007bff;border:none;border-radius:5px;color:white;cursor:pointer;margin-top:0;" onclick="handleAuth()">Log In</button>
+  <button id="auth-btn" type="button" style="width:100%;padding:15px;font-size:16px;font-weight:bold;background:#007bff;border:none;border-radius:5px;color:white;cursor:pointer;" onclick="handleAuth()">Log In</button>
 </div>
 
 <!-- Enhancement Form -->
 <form id="enhancement-form">
   <h2>Enhancement Settings</h2>
-
   <div class="instructions-box">
     <strong>Instructions:</strong>
     <ul>
@@ -365,12 +359,10 @@
       <li><strong>Quality:</strong> 4K is faster; 8K is higher fidelity.</li>
     </ul>
   </div>
-
   <div class="form-group">
     <label for="back_plane">Back Plane</label>
     <input type="text" id="back_plane" name="back_plane" placeholder="e.g. Sonoran Desert Landscape">
   </div>
-
   <div class="form-group">
     <label for="time_of_day">Time of Day</label>
     <select id="time_of_day" name="time_of_day">
@@ -379,7 +371,6 @@
       <option value="Night With Moon Glow">Night With Moon Glow</option>
     </select>
   </div>
-
   <div class="form-group">
     <label for="paver_style">Paver Style</label>
     <select id="paver_style" name="paver_style">
@@ -389,7 +380,6 @@
       <option value="Porcelain">Porcelain</option>
     </select>
   </div>
-
   <div class="form-group">
     <label for="paver_pattern">Paver Pattern</label>
     <select id="paver_pattern" name="paver_pattern">
@@ -399,7 +389,6 @@
       <option value="Herringbone">Herringbone</option>
     </select>
   </div>
-
   <div class="form-group">
     <label for="image_quality">Image Quality</label>
     <select id="image_quality" name="image_quality">
@@ -407,14 +396,11 @@
       <option value="8K">8K</option>
     </select>
   </div>
-
   <div class="form-group">
     <label for="images">Upload Images</label>
     <input type="file" id="images" name="images" multiple accept="image/*" />
   </div>
-
   <button type="submit">Enhance Images</button>
-
   <div class="tips-box">
     <strong>Tips:</strong>
     <ul>
@@ -426,6 +412,11 @@
 </form>
 
 <script>
+// ── Supabase Client (browser-side auth) ────────────────────────────────────
+const SUPABASE_URL = 'https://oqgsginzzrhpvuptpbaxe.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_KmW0R5H8MN57_gNSWIhpyA_xtAO4wjn';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 // ── State ──────────────────────────────────────────────────────────────────
 let authToken = localStorage.getItem('authToken') || null;
 let currentTab = 'login';
@@ -434,16 +425,22 @@ const SUBMIT_URL = '/api/enhance';
 const STATUS_URL = '/api/status';
 
 // ── Init ───────────────────────────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   if (authToken) {
-    showApp();
-    loadCredits();
+    // Verify token is still valid
+    const { data: { user } } = await supabaseClient.auth.getUser(authToken);
+    if (user) {
+      showApp();
+      loadCredits();
+    } else {
+      localStorage.removeItem('authToken');
+      authToken = null;
+    }
   }
-  // Handle post-purchase redirect
   const params = new URLSearchParams(window.location.search);
   if (params.get('purchase') === 'success') {
     loadCredits();
-    alert(`Credits added! Your balance has been updated.`);
+    alert('Credits added! Your balance has been updated.');
     window.history.replaceState({}, '', '/');
   }
   if (params.get('purchase') === 'cancelled') {
@@ -452,7 +449,7 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 // ── Auth ───────────────────────────────────────────────────────────────────
-function switchTab(tab) {
+function switchTab(tab, event) {
   currentTab = tab;
   document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
   event.target.classList.add('active');
@@ -472,23 +469,28 @@ async function handleAuth() {
     return;
   }
 
-  const endpoint = currentTab === 'login' ? '/auth/login' : '/auth/signup';
-
   try {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    const data = await res.json();
+    let result;
+    if (currentTab === 'login') {
+      result = await supabaseClient.auth.signInWithPassword({ email, password });
+    } else {
+      result = await supabaseClient.auth.signUp({ email, password });
+    }
 
-    if (!res.ok) {
-      errorEl.textContent = data.error || 'Authentication failed.';
+    if (result.error) {
+      errorEl.textContent = result.error.message;
       errorEl.style.display = 'block';
       return;
     }
 
-    authToken = data.session.access_token;
+    authToken = result.data.session?.access_token;
+    if (!authToken) {
+      errorEl.textContent = 'Account created! Please check your email to confirm, then log in.';
+      errorEl.style.display = 'block';
+      errorEl.style.color = '#28a745';
+      return;
+    }
+
     localStorage.setItem('authToken', authToken);
     showApp();
     loadCredits();
@@ -500,10 +502,7 @@ async function handleAuth() {
 }
 
 async function logout() {
-  await fetch('/auth/logout', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${authToken}` }
-  });
+  await supabaseClient.auth.signOut();
   authToken = null;
   localStorage.removeItem('authToken');
   document.getElementById('auth-panel').style.display = 'block';
@@ -551,7 +550,7 @@ async function purchasePack(pack) {
     });
     const data = await res.json();
     if (data.url) {
-      window.location.href = data.url; // Redirect to Stripe checkout
+      window.location.href = data.url;
     } else {
       alert('Could not start checkout. Please try again.');
     }
@@ -586,7 +585,7 @@ form.addEventListener('submit', async (e) => {
 
     if (response.ok) {
       const { jobId } = await response.json();
-      loadCredits(); // Refresh balance after deduction
+      loadCredits();
       pollStatus(jobId);
     } else {
       alert('Submission failed. Check your server logs.');
@@ -613,9 +612,7 @@ async function pollStatus(jobId) {
       if (data.status === 'completed') {
         clearInterval(interval);
         overlay.style.display = 'none';
-
         const html = data.gallery_html || (data.data && data.data.html) || data.html;
-
         if (html) {
           document.open();
           document.write(html);
