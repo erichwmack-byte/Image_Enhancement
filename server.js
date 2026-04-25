@@ -13,9 +13,6 @@ const upload = multer();
 
 const N8N_BASE_URL = 'https://courteous-solace-production-413f.up.railway.app';
 
-console.log('ENV CHECK - SUPABASE_URL:', process.env.SUPABASE_URL);
-console.log('ENV CHECK - KEY EXISTS:', !!process.env.SUPABASE_SERVICE_KEY);
-
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
@@ -58,18 +55,9 @@ app.post('/auth/signup', async (req, res) => {
 
 app.post('/auth/login', async (req, res) => {
   const { email, password } = req.body;
-  console.log('Login attempt:', email);
-  console.log('Supabase URL:', process.env.SUPABASE_URL);
-  console.log('Service key exists:', !!process.env.SUPABASE_SERVICE_KEY);
-  try {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    console.log('Supabase response:', JSON.stringify({ data, error }));
-    if (error) return res.status(400).json({ error: error.message });
-    res.json({ user: data.user, session: data.session });
-  } catch (err) {
-    console.error('Supabase threw:', err.message);
-    return res.status(400).json({ error: err.message });
-  }
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ user: data.user, session: data.session });
 });
 
 app.post('/auth/logout', requireAuth, async (req, res) => {
@@ -219,7 +207,6 @@ app.post('/api/enhance', requireAuth, upload.array('images'), async (req, res) =
         });
       });
     }
-    console.log(`Forwarding request to n8n: ${n8nUrl}`);
     const response = await axios.post(n8nUrl, form, {
       headers: { ...form.getHeaders() },
       maxContentLength: Infinity,
@@ -232,7 +219,7 @@ app.post('/api/enhance', requireAuth, upload.array('images'), async (req, res) =
     return res.status(200).json(responseData);
   } catch (error) {
     const errorData = error.response?.data || error.message;
-    console.error('Proxy Error Detail:', errorData);
+    console.error('Enhance error:', errorData);
     return res.status(500).json({ error: 'Enhancement request failed', details: errorData });
   }
 });
@@ -254,7 +241,7 @@ app.post('/api/animate', requireAuth, async (req, res) => {
     });
     return res.status(response.status).json(response.data);
   } catch (error) {
-    console.error('Animate Error:', error.response?.data || error.message);
+    console.error('Animate error:', error.response?.data || error.message);
     return res.status(500).json({ error: 'Animation request failed' });
   }
 });
@@ -271,7 +258,7 @@ app.get('/api/status', requireAuth, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     return res.status(response.status).json(response.data);
   } catch (error) {
-    console.error('Status Proxy Error:', error.response?.data || error.message);
+    console.error('Status error:', error.response?.data || error.message);
     return res.status(500).json({ error: 'Status check failed' });
   }
 });
