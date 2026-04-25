@@ -319,3 +319,325 @@
         <div class="pack-credits">40 credits · 40 images or 10 videos</div>
       </div>
       <div class="pack-price">$25</div>
+    </div>
+    <div class="pack-option" onclick="purchasePack('professional')">
+      <div>
+        <div class="pack-name">Professional Pack</div>
+        <div class="pack-credits">90 credits · 90 images or 22 videos</div>
+      </div>
+      <div class="pack-price">$50</div>
+    </div>
+    <div class="pack-option" onclick="purchasePack('studio')">
+      <div>
+        <div class="pack-name">Studio Pack</div>
+        <div class="pack-credits">200 credits · 200 images or 50 videos</div>
+      </div>
+      <div class="pack-price">$100</div>
+    </div>
+    <button class="btn-close-modal" onclick="closePurchaseModal()">Cancel</button>
+  </div>
+</div>
+
+<img src="assets/Hero1.png" alt="Hero Logo" class="hero-logo">
+
+<!-- Auth Panel -->
+<div id="auth-panel">
+  <h2>Welcome</h2>
+  <div class="auth-tabs">
+    <button class="auth-tab active" onclick="switchTab('login')">Log In</button>
+    <button class="auth-tab" onclick="switchTab('signup')">Sign Up</button>
+  </div>
+  <div id="auth-error" class="auth-error"></div>
+  <input type="email" id="auth-email" class="auth-input" placeholder="Email address" />
+  <input type="password" id="auth-password" class="auth-input" placeholder="Password" />
+  <button id="auth-btn" type="button" style="width:100%;padding:15px;font-size:16px;font-weight:bold;background:#007bff;border:none;border-radius:5px;color:white;cursor:pointer;margin-top:0;" onclick="handleAuth()">Log In</button>
+</div>
+
+<!-- Enhancement Form -->
+<form id="enhancement-form">
+  <h2>Enhancement Settings</h2>
+
+  <div class="instructions-box">
+    <strong>Instructions:</strong>
+    <ul>
+      <li>Wider angle yard shots work best. Avoid overhead shots.</li>
+      <li><strong>Backplane:</strong> Enter background (e.g., Camelback Mountain, Houston Residential).</li>
+      <li><strong>Quality:</strong> 4K is faster; 8K is higher fidelity.</li>
+    </ul>
+  </div>
+
+  <div class="form-group">
+    <label for="back_plane">Back Plane</label>
+    <input type="text" id="back_plane" name="back_plane" placeholder="e.g. Sonoran Desert Landscape">
+  </div>
+
+  <div class="form-group">
+    <label for="time_of_day">Time of Day</label>
+    <select id="time_of_day" name="time_of_day">
+      <option value="High Sun With Soft Diffusion">High Sun With Soft Diffusion</option>
+      <option value="Golden Hour">Golden Hour</option>
+      <option value="Night With Moon Glow">Night With Moon Glow</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="paver_style">Paver Style</label>
+    <select id="paver_style" name="paver_style">
+      <option value="Travertine">Travertine</option>
+      <option value="Limestone">Limestone</option>
+      <option value="Marble">Marble</option>
+      <option value="Porcelain">Porcelain</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="paver_pattern">Paver Pattern</label>
+    <select id="paver_pattern" name="paver_pattern">
+      <option value="Grid">Grid</option>
+      <option value="Offset">Offset</option>
+      <option value="Versailles">Versailles</option>
+      <option value="Herringbone">Herringbone</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="image_quality">Image Quality</label>
+    <select id="image_quality" name="image_quality">
+      <option value="4K">4K</option>
+      <option value="8K">8K</option>
+    </select>
+  </div>
+
+  <div class="form-group">
+    <label for="images">Upload Images</label>
+    <input type="file" id="images" name="images" multiple accept="image/*" />
+  </div>
+
+  <button type="submit">Enhance Images</button>
+
+  <div class="tips-box">
+    <strong>Tips:</strong>
+    <ul>
+      <li>Each image takes about 1min to process.</li>
+      <li>Each Image = 1 credit</li>
+      <li>Each Video = 4 credits</li>
+    </ul>
+  </div>
+</form>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let authToken = localStorage.getItem('authToken') || null;
+let currentTab = 'login';
+
+const SUBMIT_URL = '/api/enhance';
+const STATUS_URL = '/api/status';
+
+// ── Init ───────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  if (authToken) {
+    showApp();
+    loadCredits();
+  }
+  // Handle post-purchase redirect
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('purchase') === 'success') {
+    loadCredits();
+    alert(`Credits added! Your balance has been updated.`);
+    window.history.replaceState({}, '', '/');
+  }
+  if (params.get('purchase') === 'cancelled') {
+    window.history.replaceState({}, '', '/');
+  }
+});
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('auth-btn').textContent = tab === 'login' ? 'Log In' : 'Create Account';
+  document.getElementById('auth-error').style.display = 'none';
+}
+
+async function handleAuth() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const errorEl = document.getElementById('auth-error');
+  errorEl.style.display = 'none';
+
+  if (!email || !password) {
+    errorEl.textContent = 'Please enter email and password.';
+    errorEl.style.display = 'block';
+    return;
+  }
+
+  const endpoint = currentTab === 'login' ? '/auth/login' : '/auth/signup';
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      errorEl.textContent = data.error || 'Authentication failed.';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    authToken = data.session.access_token;
+    localStorage.setItem('authToken', authToken);
+    showApp();
+    loadCredits();
+
+  } catch (err) {
+    errorEl.textContent = 'Connection error. Please try again.';
+    errorEl.style.display = 'block';
+  }
+}
+
+async function logout() {
+  await fetch('/auth/logout', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${authToken}` }
+  });
+  authToken = null;
+  localStorage.removeItem('authToken');
+  document.getElementById('auth-panel').style.display = 'block';
+  document.getElementById('enhancement-form').style.display = 'none';
+  document.getElementById('credit-bar').style.display = 'none';
+}
+
+function showApp() {
+  document.getElementById('auth-panel').style.display = 'none';
+  document.getElementById('enhancement-form').style.display = 'block';
+  document.getElementById('credit-bar').style.display = 'flex';
+}
+
+// ── Credits ────────────────────────────────────────────────────────────────
+async function loadCredits() {
+  try {
+    const res = await fetch('/api/credits', {
+      headers: { 'Authorization': `Bearer ${authToken}` }
+    });
+    const data = await res.json();
+    document.getElementById('credit-count').textContent = data.balance ?? 0;
+  } catch (err) {
+    console.error('Could not load credits:', err);
+  }
+}
+
+// ── Purchase ───────────────────────────────────────────────────────────────
+function openPurchaseModal() {
+  document.getElementById('purchase-modal').style.display = 'flex';
+}
+
+function closePurchaseModal() {
+  document.getElementById('purchase-modal').style.display = 'none';
+}
+
+async function purchasePack(pack) {
+  try {
+    const res = await fetch('/api/purchase', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`
+      },
+      body: JSON.stringify({ pack })
+    });
+    const data = await res.json();
+    if (data.url) {
+      window.location.href = data.url; // Redirect to Stripe checkout
+    } else {
+      alert('Could not start checkout. Please try again.');
+    }
+  } catch (err) {
+    alert('Connection error. Please try again.');
+  }
+}
+
+// ── Enhancement Form ───────────────────────────────────────────────────────
+const form = document.getElementById('enhancement-form');
+const overlay = document.getElementById('loading-overlay');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  overlay.style.display = 'flex';
+
+  const formData = new FormData(form);
+
+  try {
+    const response = await fetch(SUBMIT_URL, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+      body: formData
+    });
+
+    if (response.status === 402) {
+      overlay.style.display = 'none';
+      alert('Not enough credits. Please purchase more to continue.');
+      openPurchaseModal();
+      return;
+    }
+
+    if (response.ok) {
+      const { jobId } = await response.json();
+      loadCredits(); // Refresh balance after deduction
+      pollStatus(jobId);
+    } else {
+      alert('Submission failed. Check your server logs.');
+      overlay.style.display = 'none';
+    }
+
+  } catch (error) {
+    console.error('Submission Error:', error);
+    alert('Connection failed.');
+    overlay.style.display = 'none';
+  }
+});
+
+async function pollStatus(jobId) {
+  const interval = setInterval(async () => {
+    try {
+      const response = await fetch(`${STATUS_URL}?jobId=${jobId}`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      const data = await response.json();
+
+      console.log("📡 Full response:", JSON.stringify(data));
+
+      if (data.status === 'completed') {
+        clearInterval(interval);
+        overlay.style.display = 'none';
+
+        const html = data.gallery_html || (data.data && data.data.html) || data.html;
+
+        if (html) {
+          document.open();
+          document.write(html);
+          document.close();
+        } else {
+          alert('Completed but no gallery found. Check console.');
+        }
+        return;
+      }
+
+      if (data.status === 'failed') {
+        clearInterval(interval);
+        overlay.style.display = 'none';
+        alert('Process failed in n8n. Check n8n executions.');
+      }
+
+    } catch (err) {
+      console.error('Polling error:', err);
+    }
+  }, 10000);
+}
+</script>
+
+</body>
+</html>
