@@ -149,29 +149,42 @@ app.post('/webhooks/stripe', async (req, res) => {
   }
 
   if (event.type === 'checkout.session.completed') {
-    const session = event.data.object;
-    const { user_id, credits } = session.metadata;
-    const creditsToAdd = parseInt(credits);
+    try {
+      const session = event.data.object;
+      const { user_id, credits } = session.metadata;
+      const creditsToAdd = parseInt(credits);
 
-    const { data: existing } = await supabase
-      .from('credits')
-      .select('balance')
-      .eq('user_id', user_id)
-      .single();
+      const { data: existing } = await supabase
+        .from('credits')
+        .select('balance')
+        .eq('user_id', user_id)
+        .single();
 
-    await supabase
-      .from('credits')
-      .update({ balance: existing.balance + creditsToAdd, updated_at: new Date() })
-      .eq('user_id', user_id);
+      if (existing) {
+        await supabase
+          .from('credits')
+          .update({ balance: existing.balance + creditsToAdd, updated_at: new Date() })
+          .eq('user_id', user_id);
+      } else {
+        await supabase
+          .from('credits')
+          .insert({ user_id, balance: creditsToAdd });
+      }
 
-    await supabase
-      .from('credit_transactions')
-      .insert({
-        user_id,
-        amount: creditsToAdd,
-        type: 'purchase',
-        description: `Purchased ${creditsToAdd} credits`
-      });
+      await supabase
+        .from('credit_transactions')
+        .insert({
+          user_id,
+          amount: creditsToAdd,
+          type: 'purchase',
+          description: `Purchased ${creditsToAdd} credits`
+        });
+
+      console.log(`Credits added: ${creditsToAdd} for user ${user_id}`);
+    } catch (err) {
+      console.error('Webhook processing error:', err.message);
+      return res.status(500).json({ error: err.message });
+    }
   }
 
   res.json({ received: true });
