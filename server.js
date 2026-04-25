@@ -44,24 +44,20 @@ async function requireAuth(req, res, next) {
 }
 
 // ── Auth Routes ───────────────────────────────────────────────────────────────
-app.post('/auth/signup', async (req, res) => {
-  const { email, password } = req.body;
-  const { data, error } = await supabase.auth.signUp({ email, password });
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ user: data.user, session: data.session });
-});
-
 app.post('/auth/login', async (req, res) => {
   const { email, password } = req.body;
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ user: data.user, session: data.session });
-});
-
-app.post('/auth/logout', requireAuth, async (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  await supabase.auth.admin.signOut(token);
-  res.json({ success: true });
+  console.log('Login attempt:', email);
+  console.log('Supabase URL:', process.env.SUPABASE_URL);
+  console.log('Service key exists:', !!process.env.SUPABASE_SERVICE_KEY);
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    console.log('Supabase response:', JSON.stringify({ data, error }));
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ user: data.user, session: data.session });
+  } catch (err) {
+    console.error('Supabase threw:', err.message);
+    return res.status(400).json({ error: err.message });
+  }
 });
 
 // ── Credits Routes ────────────────────────────────────────────────────────────
