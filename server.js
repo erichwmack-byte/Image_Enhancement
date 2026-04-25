@@ -2,91 +2,154 @@ const express = require('express');
 const axios = require('axios');
 const FormData = require('form-data');
 const multer = require('multer');
+const { createClient } = require('@supabase/supabase-js');
+const Stripe = require('stripe');
+
 const app = express();
 const upload = multer();
+
 const N8N_BASE_URL = 'https://courteous-solace-production-413f.up.railway.app';
 
-// 1. Middleware
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+// Credit costs
+const CREDIT_PACKS = {
+  starter:      { credits: 40,  price: 2500,  name: '$25 - 40 Credits' },
+  professional: { credits: 90,  price: 5000,  name: '$50 - 90 Credits' },
+  studio:       { credits: 200, price: 10000, name: '$100 - 200 Credits' }
+};
+
+const CREDIT_COSTS = {
+  enhance: 1,
+  animate: 4
+};
+
+// ── Middleware ────────────────────────────────────────────────────────────────
 app.use(express.static('.'));
+app.use('/webhooks/stripe', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
-// 2. The "Enhance" Proxy - Initiates the n8n Workflow
-app.post('/api/enhance', upload.array('images'), async (req, res) => {
-  try {
-    const n8nUrl = `${N8N_BASE_URL}/webhook/Batch_EnhancementOptionsWeb`;
-    const form = new FormData();
-    form.append('back_plane', req.body.back_plane || '');
-    form.append('time_of_day', req.body.time_of_day || '');
-    form.append('paver_style', req.body.paver_style || '');
-    form.append('paver_pattern', req.body.paver_pattern || '');
-    form.append('image_quality', req.body.image_quality || '');
-    if (req.files && req.files.length > 0) {
-      req.files.forEach(file => {
-        form.append('images', file.buffer, {
-          filename: file.originalname,
-          contentType: file.mimetype
-        });
-      });
-    }
-    console.log(`Forwarding request to n8n: ${n8nUrl}`);
-    const response = await axios.post(n8nUrl, form, {
-      headers: {
-        ...form.getHeaders(),
+// ── Auth Middleware ───────────────────────────────────────────────────────────
+async function requireAuth(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'No token provided' });
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) return res.status(401).json({ error: 'Invalid token' });
+  req.user = user;
+  next();
+}
+
+// ── Auth Routes ───────────────────────────────────────────────────────────────
+app.post('/auth/signup', async (req, res) => {
+  const { email, password } = req.body;
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ user: data.user, session: data.session });
+});
+
+app.post('/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ user: data.user, session: data.session });
+});
+
+app.post('/auth/logout', requireAuth, async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  await supabase.auth.admin.signOut(token);
+  res.json({ success: true });
+});
+
+// ── Credits Routes ────────────────────────────────────────────────────────────
+app.get('/api/credits', requireAuth, async (req, res) => {
+  const { data, error } = await supabase
+    .from('credits')
+    .select('balance')
+    .eq('user_id', req.user.id)
+    .single();
+  if (error) return res.status(500).json({ error: 'Could not fetch credits' });
+  res.json({ balance: data.balance });
+});
+
+async function deductCredits(userId, amount, type, description) {
+  const { data: credits } = await supabase
+    .from('credits')
+    .select('balance')
+    .eq('user_id', userId)
+    .single();
+
+  if (!credits || credits.balance < amount) return false;
+
+  await supabase
+    .from('credits')
+    .update({ balance: credits.balance - amount, updated_at: new Date() })
+    .eq('user_id', userId);
+
+  await supabase
+    .from('credit_transactions')
+    .insert({ user_id: userId, amount: -amount, type, description });
+
+  return true;
+}
+
+// ── Stripe Routes ─────────────────────────────────────────────────────────────
+app.post('/api/purchase', requireAuth, async (req, res) => {
+  const { pack } = req.body;
+  const creditPack = CREDIT_PACKS[pack];
+  if (!creditPack) return res.status(400).json({ error: 'Invalid pack' });
+
+  const session = await stripe.checkout.sessions.create({
+    payment_method_types: ['card'],
+    line_items: [{
+      price_data: {
+        currency: 'usd',
+        product_data: { name: creditPack.name },
+        unit_amount: creditPack.price
       },
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity
-    });
-    const responseData = response.data;
-    if (!responseData.jobId) {
-      console.warn('Warning: n8n responded without a jobId. Check your Respond to Webhook node.');
+      quantity: 1
+    }],
+    mode: 'payment',
+    success_url: `${req.headers.origin}?purchase=success&credits=${creditPack.credits}`,
+    cancel_url: `${req.headers.origin}?purchase=cancelled`,
+    metadata: {
+      user_id: req.user.id,
+      credits: creditPack.credits,
+      pack
     }
-    return res.status(200).json(responseData);
-  } catch (error) {
-    const errorData = error.response?.data || error.message;
-    console.error('Proxy Error Detail:', errorData);
-    return res.status(500).json({ 
-      error: 'Enhancement request failed',
-      details: errorData 
-    });
-  }
+  });
+
+  res.json({ url: session.url });
 });
 
-// 3. Status Proxy - Polls the Status Check Workflow
-app.get('/api/status', async (req, res) => {
-  const { jobId } = req.query;
-  if (!jobId || jobId === 'undefined') {
-    return res.status(400).json({ error: 'Missing or invalid jobId parameter' });
-  }
+app.post('/webhooks/stripe', async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
   try {
-    const statusUrl = `${N8N_BASE_URL}/webhook/check-status?jobId=${jobId}`;
-    const response = await axios.get(statusUrl);
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    return res.status(response.status).json(response.data);
-  } catch (error) {
-    console.error('Status Proxy Error:', error.response?.data || error.message);
-    return res.status(500).json({ error: 'Status check failed' });
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+  } catch (err) {
+    return res.status(400).json({ error: `Webhook error: ${err.message}` });
   }
-});
 
-// 4. Animate Proxy - Sends image to animation workflow
-app.post('/api/animate', async (req, res) => {
-  try {
-    const n8nUrl = `${N8N_BASE_URL}/webhook/animate_image`;
-    const response = await axios.post(n8nUrl, req.body, {
-      headers: { 'Content-Type': 'application/json' }
-    });
-    return res.status(response.status).json(response.data);
-  } catch (error) {
-    console.error('Animate Error:', error.response?.data || error.message);
-    return res.status(500).json({ error: 'Animation request failed' });
-  }
-});
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const { user_id, credits } = session.metadata;
+    const creditsToAdd = parseInt(credits);
 
-// 5. Start Server
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`-----------------------------------------------`);
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Targeting n8n at: ${N8N_BASE_URL}`);
-  console.log(`-----------------------------------------------`);
-});
+    const { data: existing } = await supabase
+      .from('credits')
+      .select('balance')
+      .eq('user_id', user_id)
+      .single();
+
+    await supabase
+      .from('credits')
+      .update({ balance: existing.balance + creditsToAdd, updated_at: new Date() })
+      .eq('user_id', user_id);
+
+    await supabase
+      .from('credit_transactions')
+      .insert({
