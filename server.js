@@ -10,13 +10,15 @@ const upload = multer();
 
 const N8N_BASE_URL = 'https://courteous-solace-production-413f.up.railway.app';
 
+console.log('ENV CHECK - SUPABASE_URL:', process.env.SUPABASE_URL);
+console.log('ENV CHECK - KEY EXISTS:', !!process.env.SUPABASE_SERVICE_KEY);
+
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Credit costs
 const CREDIT_PACKS = {
   starter:      { credits: 40,  price: 2500,  name: '$25 - 40 Credits' },
   professional: { credits: 90,  price: 5000,  name: '$50 - 90 Credits' },
@@ -44,6 +46,13 @@ async function requireAuth(req, res, next) {
 }
 
 // ── Auth Routes ───────────────────────────────────────────────────────────────
+app.post('/auth/signup', async (req, res) => {
+  const { email, password } = req.body;
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ user: data.user, session: data.session });
+});
+
 app.post('/auth/login', async (req, res) => {
   const { email, password } = req.body;
   console.log('Login attempt:', email);
@@ -58,6 +67,12 @@ app.post('/auth/login', async (req, res) => {
     console.error('Supabase threw:', err.message);
     return res.status(400).json({ error: err.message });
   }
+});
+
+app.post('/auth/logout', requireAuth, async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  await supabase.auth.admin.signOut(token);
+  res.json({ success: true });
 });
 
 // ── Credits Routes ────────────────────────────────────────────────────────────
