@@ -131,7 +131,7 @@
 
     .btn-logout:hover { color: #fff; border-color: #666; }
 
-    #purchase-modal {
+    #purchase-modal, #forgot-modal, #newpass-modal {
       display: none;
       position: fixed;
       top: 0; left: 0;
@@ -287,6 +287,61 @@
 
     .loading-text { font-size: 22px; font-weight: bold; color: #fff; letter-spacing: 1px; }
     .loading-subtext { font-size: 14px; color: #888; margin-top: 12px; max-width: 300px; line-height: 1.4; }
+
+    .reset-modal-box {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 40px;
+      width: 100%;
+      max-width: 400px;
+      margin: 20px;
+      box-sizing: border-box;
+    }
+
+    .reset-modal-box h2 { color: #fff; margin: 0 0 8px; text-align: left; font-size: 22px; }
+    .reset-modal-box p { color: #888; font-size: 14px; margin: 0 0 24px; }
+
+    .reset-input {
+      width: 100%;
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #000;
+      color: #fff;
+      font-size: 14px;
+      box-sizing: border-box;
+      margin-bottom: 12px;
+    }
+
+    .reset-input:focus { outline: none; border-color: #007bff; }
+
+    .btn-reset-submit {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .btn-reset-blue { background: #007bff; color: #fff; }
+    .btn-reset-blue:hover { background: #0056b3; }
+    .btn-reset-green { background: #28a745; color: #fff; }
+    .btn-reset-green:hover { background: #1e7e34; }
+
+    .reset-back-link {
+      display: block;
+      text-align: center;
+      margin-top: 16px;
+      color: #888;
+      font-size: 13px;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .reset-back-link:hover { color: #fff; }
   </style>
 </head>
 <body>
@@ -333,6 +388,31 @@
   </div>
 </div>
 
+<!-- Forgot Password Modal -->
+<div id="forgot-modal">
+  <div class="reset-modal-box">
+    <h2>Reset Password</h2>
+    <p>Enter your email and we'll send you a reset link.</p>
+    <input id="reset-email" type="email" class="reset-input" placeholder="Your email address" />
+    <button class="btn-reset-submit btn-reset-blue" onclick="sendResetEmail()">Send Reset Link</button>
+    <p id="reset-msg" style="color:#28a745; font-size:13px; text-align:center; margin-top:12px; display:none;">
+      Check your email for the reset link!
+    </p>
+    <a class="reset-back-link" onclick="hideForgotModal()">← Back to login</a>
+  </div>
+</div>
+
+<!-- New Password Modal (shown after clicking email link) -->
+<div id="newpass-modal">
+  <div class="reset-modal-box">
+    <h2>Set New Password</h2>
+    <p>Choose a new password for your account.</p>
+    <input id="new-password" type="password" class="reset-input" placeholder="New password (min 6 characters)" />
+    <button class="btn-reset-submit btn-reset-green" onclick="updatePassword()">Update Password</button>
+    <p id="newpass-msg" style="font-size:13px; text-align:center; margin-top:12px; display:none;"></p>
+  </div>
+</div>
+
 <img src="assets/Hero1.png" alt="Hero Logo" class="hero-logo">
 
 <!-- Auth Panel -->
@@ -346,6 +426,11 @@
   <input type="email" id="auth-email" class="auth-input" placeholder="Email address" />
   <input type="password" id="auth-password" class="auth-input" placeholder="Password" />
   <button id="auth-btn" type="button" style="width:100%;padding:15px;font-size:16px;font-weight:bold;background:#007bff;border:none;border-radius:5px;color:white;cursor:pointer;" onclick="handleAuth()">Log In</button>
+  <p style="text-align:center; margin:14px 0 0;">
+    <a onclick="showForgotModal()" style="color:#888; font-size:13px; text-decoration:none; cursor:pointer;">
+      Forgot password?
+    </a>
+  </p>
 </div>
 
 <!-- Enhancement Form -->
@@ -427,7 +512,6 @@ const STATUS_URL = '/api/status';
 // ── Init ───────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', async () => {
   if (authToken) {
-    // Verify token is still valid
     const { data: { user } } = await supabaseClient.auth.getUser(authToken);
     if (user) {
       showApp();
@@ -437,7 +521,19 @@ window.addEventListener('DOMContentLoaded', async () => {
       authToken = null;
     }
   }
+
+  // Handle password reset redirect
   const params = new URLSearchParams(window.location.search);
+  if (params.get('reset') === 'true') {
+    const { data } = await supabaseClient.auth.getSession();
+    if (data?.session) {
+      authToken = data.session.access_token;
+      localStorage.setItem('authToken', authToken);
+      document.getElementById('newpass-modal').style.display = 'flex';
+      window.history.replaceState({}, '', '/');
+    }
+  }
+
   if (params.get('purchase') === 'success') {
     loadCredits();
     alert('Credits added! Your balance has been updated.');
@@ -446,6 +542,16 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (params.get('purchase') === 'cancelled') {
     window.history.replaceState({}, '', '/');
   }
+
+  // Auto refresh token every 50 minutes
+  setInterval(async () => {
+    if (!authToken) return;
+    const { data } = await supabaseClient.auth.refreshSession();
+    if (data?.session?.access_token) {
+      authToken = data.session.access_token;
+      localStorage.setItem('authToken', authToken);
+    }
+  }, 50 * 60 * 1000);
 });
 
 // ── Auth ───────────────────────────────────────────────────────────────────
@@ -514,6 +620,88 @@ function showApp() {
   document.getElementById('auth-panel').style.display = 'none';
   document.getElementById('enhancement-form').style.display = 'block';
   document.getElementById('credit-bar').style.display = 'flex';
+}
+
+// ── Forgot Password ────────────────────────────────────────────────────────
+function showForgotModal() {
+  document.getElementById('forgot-modal').style.display = 'flex';
+  document.getElementById('reset-msg').style.display = 'none';
+  document.getElementById('reset-email').value = '';
+}
+
+function hideForgotModal() {
+  document.getElementById('forgot-modal').style.display = 'none';
+}
+
+async function sendResetEmail() {
+  const email = document.getElementById('reset-email').value.trim();
+  if (!email || !email.includes('@')) {
+    alert('Please enter a valid email address.');
+    return;
+  }
+
+  try {
+    const res = await fetch('/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+
+    if (res.ok) {
+      document.getElementById('reset-msg').style.display = 'block';
+    } else {
+      const data = await res.json();
+      alert(data.error || 'Could not send reset email. Please try again.');
+    }
+  } catch (err) {
+    alert('Connection error. Please try again.');
+  }
+}
+
+async function updatePassword() {
+  const password = document.getElementById('new-password').value;
+  const msgEl = document.getElementById('newpass-msg');
+
+  if (!password || password.length < 6) {
+    msgEl.style.color = '#dc3545';
+    msgEl.textContent = 'Password must be at least 6 characters.';
+    msgEl.style.display = 'block';
+    return;
+  }
+
+  try {
+    const res = await fetch('/auth/update-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + authToken
+      },
+      body: JSON.stringify({ password })
+    });
+
+    if (res.ok) {
+      msgEl.style.color = '#28a745';
+      msgEl.textContent = 'Password updated successfully! Please log in.';
+      msgEl.style.display = 'block';
+      setTimeout(() => {
+        document.getElementById('newpass-modal').style.display = 'none';
+        authToken = null;
+        localStorage.removeItem('authToken');
+        document.getElementById('auth-panel').style.display = 'block';
+        document.getElementById('enhancement-form').style.display = 'none';
+        document.getElementById('credit-bar').style.display = 'none';
+      }, 2000);
+    } else {
+      const data = await res.json();
+      msgEl.style.color = '#dc3545';
+      msgEl.textContent = data.error || 'Update failed. Please try again.';
+      msgEl.style.display = 'block';
+    }
+  } catch (err) {
+    msgEl.style.color = '#dc3545';
+    msgEl.textContent = 'Connection error. Please try again.';
+    msgEl.style.display = 'block';
+  }
 }
 
 // ── Credits ────────────────────────────────────────────────────────────────
