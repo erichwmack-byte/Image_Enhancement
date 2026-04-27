@@ -66,6 +66,29 @@ app.post('/auth/logout', requireAuth, async (req, res) => {
   res.json({ success: true });
 });
 
+// ── Password Reset Routes ─────────────────────────────────────────────────────
+app.post('/auth/reset-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${req.headers.origin}?reset=true`
+  });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ success: true });
+});
+
+app.post('/auth/update-password', requireAuth, async (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+  const { error } = await supabase.auth.admin.updateUserById(req.user.id, {
+    password
+  });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ success: true });
+});
+
 // ── Credits Routes ────────────────────────────────────────────────────────────
 app.get('/api/credits', requireAuth, async (req, res) => {
   const { data, error } = await supabase
