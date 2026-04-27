@@ -199,6 +199,8 @@ app.post('/api/enhance', requireAuth, upload.array('images'), async (req, res) =
     form.append('paver_style', req.body.paver_style || '');
     form.append('paver_pattern', req.body.paver_pattern || '');
     form.append('image_quality', req.body.image_quality || '');
+    form.append('user_email', req.user.email || '');
+    form.append('user_id', req.user.id || '');
     if (req.files?.length > 0) {
       req.files.forEach(file => {
         form.append('images', file.buffer, {
