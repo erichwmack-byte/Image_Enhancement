@@ -740,8 +740,111 @@
       margin-bottom: 8px;
     }
 
+    /* ── PRICING SECTION ── */
+    .pricing-section {
+      max-width: 620px;
+      width: 100%;
+      margin-bottom: 52px;
+      animation: fadeUp 0.8s 0.3s ease both;
+    }
+
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .pricing-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px 20px;
+      text-align: center;
+      transition: all 0.25s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .pricing-card:hover {
+      border-color: var(--border-aqua);
+      background: rgba(0,194,199,0.04);
+      transform: translateY(-2px);
+    }
+
+    .pricing-card.featured {
+      border-color: var(--border-yellow);
+      background: rgba(245,200,66,0.04);
+    }
+
+    .pricing-card.featured:hover {
+      border-color: var(--yellow);
+    }
+
+    .pricing-badge {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: var(--yellow);
+      color: #06101A;
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border-radius: 20px;
+    }
+
+    .pricing-name {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .pricing-price {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 40px;
+      font-weight: 300;
+      color: var(--aqua);
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+
+    .pricing-card.featured .pricing-price {
+      color: var(--yellow);
+    }
+
+    .pricing-per {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 16px;
+    }
+
+    .pricing-divider {
+      width: 100%;
+      height: 1px;
+      background: var(--border);
+      margin-bottom: 16px;
+    }
+
+    .pricing-credits {
+      font-size: 18px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .pricing-breakdown {
+      font-size: 11px;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+
     /* Responsive */
     @media (max-width: 600px) {
+      .pricing-grid { grid-template-columns: 1fr; }
       .steps-grid { grid-template-columns: 1fr; }
       .stats-row { flex-direction: column; }
       .stat-item { border-right: none; border-bottom: 1px solid var(--border-yellow); }
@@ -885,6 +988,45 @@
         <div class="step-body">Download photo-realistic visuals and optional 5-second client-ready videos.</div>
       </div>
     </div>
+  </div>
+
+  <!-- Pricing Section -->
+  <div class="pricing-section">
+    <div class="section-label">Credit Packages</div>
+    <div class="pricing-grid">
+
+      <div class="pricing-card">
+        <div class="pricing-name">Starter</div>
+        <div class="pricing-price">$25</div>
+        <div class="pricing-per">one-time purchase</div>
+        <div class="pricing-divider"></div>
+        <div class="pricing-credits">40 Credits</div>
+        <div class="pricing-breakdown">40 images<br>or 10 videos</div>
+      </div>
+
+      <div class="pricing-card featured">
+        <div class="pricing-badge">Popular</div>
+        <div class="pricing-name">Professional</div>
+        <div class="pricing-price">$50</div>
+        <div class="pricing-per">one-time purchase</div>
+        <div class="pricing-divider"></div>
+        <div class="pricing-credits">90 Credits</div>
+        <div class="pricing-breakdown">90 images<br>or 22 videos</div>
+      </div>
+
+      <div class="pricing-card">
+        <div class="pricing-name">Studio</div>
+        <div class="pricing-price">$100</div>
+        <div class="pricing-per">one-time purchase</div>
+        <div class="pricing-divider"></div>
+        <div class="pricing-credits">200 Credits</div>
+        <div class="pricing-breakdown">200 images<br>or 50 videos</div>
+      </div>
+
+    </div>
+    <p style="text-align:center; font-size:12px; color:var(--text-dim); margin-top:14px; line-height:1.6;">
+      Credits never expire &nbsp;·&nbsp; 1 credit per image &nbsp;·&nbsp; 4 credits per 5-second video
+    </p>
   </div>
 
   <!-- Auth Panel -->
@@ -1262,3 +1404,4 @@ async function pollStatus(jobId) {
 </script>
 </body>
 </html>
+
