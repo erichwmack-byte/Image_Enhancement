@@ -565,6 +565,45 @@
 
     .forgot-link:hover { color: var(--text-muted); }
 
+    .terms-row {
+      display: none;
+      margin-bottom: 14px;
+    }
+
+    .terms-row label {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      cursor: pointer;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 400;
+      line-height: 1.5;
+    }
+
+    .terms-row input[type="checkbox"] {
+      width: auto;
+      min-width: 16px;
+      height: 16px;
+      margin-top: 2px;
+      accent-color: var(--aqua);
+      cursor: pointer;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 0;
+    }
+
+    .terms-row a {
+      color: var(--aqua);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .terms-row a:hover { color: var(--aqua-light); }
+
     /* ── ENHANCEMENT FORM ── */
     #enhancement-form {
       display: none;
@@ -1042,6 +1081,12 @@
     <div id="auth-error" class="auth-error"></div>
     <input type="email" id="auth-email" class="auth-input" placeholder="Email address" />
     <input type="password" id="auth-password" class="auth-input" placeholder="Password" />
+    <div class="terms-row" id="terms-row">
+      <label>
+        <input type="checkbox" id="terms-checkbox">
+        <span>I agree to the <a href="/terms.html" target="_blank">Terms of Service</a>. I understand that generated images are AI renderings for presentation purposes only.</span>
+      </label>
+    </div>
     <button id="auth-btn" type="button" onclick="handleAuth()">Sign In</button>
     <a class="forgot-link" onclick="showForgotModal()">Forgot your password?</a>
   </div>
@@ -1185,6 +1230,8 @@ function switchTab(tab, event) {
   document.getElementById('auth-error').style.display = 'none';
   document.querySelector('.auth-header h2').textContent = tab === 'login' ? 'Welcome Back' : 'Create Account';
   document.querySelector('.auth-header p').textContent = tab === 'login' ? 'Sign in to access your StudioFinish workspace' : 'Join StudioFinish and start rendering today';
+  document.getElementById('terms-row').style.display = tab === 'signup' ? 'block' : 'none';
+  document.querySelector('.forgot-link').style.display = tab === 'login' ? 'block' : 'none';
 }
 
 async function handleAuth() {
@@ -1204,6 +1251,12 @@ async function handleAuth() {
     if (currentTab === 'login') {
       result = await supabaseClient.auth.signInWithPassword({ email, password });
     } else {
+      const agreed = document.getElementById('terms-checkbox').checked;
+      if (!agreed) {
+        errorEl.textContent = 'Please agree to the Terms of Service to create an account.';
+        errorEl.style.display = 'block';
+        return;
+      }
       result = await supabaseClient.auth.signUp({ email, password });
     }
 
@@ -1404,4 +1457,3 @@ async function pollStatus(jobId) {
 </script>
 </body>
 </html>
-
