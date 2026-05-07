@@ -175,8 +175,24 @@
 
     .btn-logout:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
 
+    .btn-change-pw {
+      background: none;
+      color: var(--text-dim);
+      border: none;
+      padding: 0;
+      cursor: pointer;
+      font-size: 11px;
+      font-family: 'DM Sans', sans-serif;
+      transition: color 0.2s;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      text-decoration-color: var(--text-dim);
+    }
+
+    .btn-change-pw:hover { color: var(--text-muted); text-decoration-color: var(--text-muted); }
+
     /* ── MODALS ── */
-    #purchase-modal, #forgot-modal, #newpass-modal {
+    #purchase-modal, #forgot-modal, #newpass-modal, #changepass-modal {
       display: none;
       position: fixed;
       inset: 0;
@@ -281,6 +297,7 @@
     }
 
     .reset-input:focus { outline: none; border-color: var(--border-aqua); }
+    .reset-input::placeholder { color: var(--text-dim); }
 
     .btn-reset-submit {
       width: 100%;
@@ -815,9 +832,7 @@
       background: rgba(245,200,66,0.04);
     }
 
-    .pricing-card.featured:hover {
-      border-color: var(--yellow);
-    }
+    .pricing-card.featured:hover { border-color: var(--yellow); }
 
     .pricing-badge {
       position: absolute;
@@ -851,9 +866,7 @@
       margin-bottom: 4px;
     }
 
-    .pricing-card.featured .pricing-price {
-      color: var(--yellow);
-    }
+    .pricing-card.featured .pricing-price { color: var(--yellow); }
 
     .pricing-per {
       font-size: 11px;
@@ -912,6 +925,7 @@
   <span id="credit-count">0</span>
   <div class="divider-v"></div>
   <button class="btn-buy" onclick="openPurchaseModal()">+ Buy</button>
+  <button class="btn-change-pw" onclick="openChangePasswordModal()">Change Password</button>
   <button class="btn-logout" onclick="logout()">Sign Out</button>
 </div>
 
@@ -959,7 +973,7 @@
   </div>
 </div>
 
-<!-- New Password Modal -->
+<!-- New Password Modal (password reset flow) -->
 <div id="newpass-modal">
   <div class="reset-modal-box">
     <h2>Set New Password</h2>
@@ -967,6 +981,20 @@
     <input id="new-password" type="password" class="reset-input" placeholder="New password (min 6 characters)" />
     <button class="btn-reset-submit btn-reset-green" onclick="updatePassword()">Update Password</button>
     <p id="newpass-msg" style="font-size:13px; text-align:center; margin-top:14px; display:none; line-height:1.5;"></p>
+  </div>
+</div>
+
+<!-- Change Password Modal (logged-in flow) -->
+<div id="changepass-modal">
+  <div class="reset-modal-box">
+    <h2>Change Password</h2>
+    <p>Enter your current password to verify your identity, then choose a new one.</p>
+    <input id="current-password" type="password" class="reset-input" placeholder="Current password" />
+    <input id="change-new-password" type="password" class="reset-input" placeholder="New password (min 6 characters)" />
+    <input id="change-confirm-password" type="password" class="reset-input" placeholder="Confirm new password" />
+    <button class="btn-reset-submit btn-reset-green" onclick="changePassword()">Update Password</button>
+    <p id="changepass-msg" style="font-size:13px; text-align:center; margin-top:14px; display:none; line-height:1.5;"></p>
+    <a class="reset-back-link" onclick="closeChangePasswordModal()">← Cancel</a>
   </div>
 </div>
 
@@ -1329,6 +1357,7 @@ async function sendResetEmail() {
   } catch (err) { alert('Connection error. Please try again.'); }
 }
 
+// Password reset flow (from email link)
 async function updatePassword() {
   const password = document.getElementById('new-password').value;
   const msgEl = document.getElementById('newpass-msg');
@@ -1356,6 +1385,108 @@ async function updatePassword() {
         document.getElementById('enhancement-form').style.display = 'none';
         document.getElementById('credit-bar').style.display = 'none';
       }, 2000);
+    } else {
+      const data = await res.json();
+      msgEl.style.color = '#ff8080';
+      msgEl.textContent = data.error || 'Update failed. Please try again.';
+      msgEl.style.display = 'block';
+    }
+  } catch (err) {
+    msgEl.style.color = '#ff8080';
+    msgEl.textContent = 'Connection error. Please try again.';
+    msgEl.style.display = 'block';
+  }
+}
+
+// ── Change Password (logged-in flow) ──────────────────────────────────────
+function openChangePasswordModal() {
+  document.getElementById('changepass-modal').style.display = 'flex';
+  document.getElementById('current-password').value = '';
+  document.getElementById('change-new-password').value = '';
+  document.getElementById('change-confirm-password').value = '';
+  const msgEl = document.getElementById('changepass-msg');
+  msgEl.style.display = 'none';
+  msgEl.textContent = '';
+}
+
+function closeChangePasswordModal() {
+  document.getElementById('changepass-modal').style.display = 'none';
+}
+
+async function changePassword() {
+  const currentPassword = document.getElementById('current-password').value;
+  const newPassword = document.getElementById('change-new-password').value;
+  const confirmPassword = document.getElementById('change-confirm-password').value;
+  const msgEl = document.getElementById('changepass-msg');
+  msgEl.style.display = 'none';
+
+  if (!currentPassword) {
+    msgEl.style.color = '#ff8080';
+    msgEl.textContent = 'Please enter your current password.';
+    msgEl.style.display = 'block';
+    return;
+  }
+
+  if (!newPassword || newPassword.length < 6) {
+    msgEl.style.color = '#ff8080';
+    msgEl.textContent = 'New password must be at least 6 characters.';
+    msgEl.style.display = 'block';
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    msgEl.style.color = '#ff8080';
+    msgEl.textContent = 'New passwords do not match.';
+    msgEl.style.display = 'block';
+    return;
+  }
+
+  if (currentPassword === newPassword) {
+    msgEl.style.color = '#ff8080';
+    msgEl.textContent = 'New password must be different from your current password.';
+    msgEl.style.display = 'block';
+    return;
+  }
+
+  try {
+    // First verify current password by re-authenticating
+    const { data: userData } = await supabaseClient.auth.getUser(authToken);
+    if (!userData?.user?.email) {
+      msgEl.style.color = '#ff8080';
+      msgEl.textContent = 'Session expired. Please sign in again.';
+      msgEl.style.display = 'block';
+      return;
+    }
+
+    const { error: verifyError } = await supabaseClient.auth.signInWithPassword({
+      email: userData.user.email,
+      password: currentPassword
+    });
+
+    if (verifyError) {
+      msgEl.style.color = '#ff8080';
+      msgEl.textContent = 'Current password is incorrect.';
+      msgEl.style.display = 'block';
+      return;
+    }
+
+    // Current password verified — now update to new password
+    const res = await fetch('/auth/update-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + authToken
+      },
+      body: JSON.stringify({ password: newPassword })
+    });
+
+    if (res.ok) {
+      msgEl.style.color = '#2ABF7A';
+      msgEl.textContent = '✓ Password updated successfully.';
+      msgEl.style.display = 'block';
+      setTimeout(() => {
+        closeChangePasswordModal();
+      }, 1800);
     } else {
       const data = await res.json();
       msgEl.style.color = '#ff8080';
