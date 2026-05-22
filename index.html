@@ -394,6 +394,187 @@
       margin: 0 auto;
     }
 
+    /* ── BEFORE / AFTER SLIDER ── */
+    .before-after-section {
+      width: 100%;
+      max-width: 780px;
+      margin-bottom: 52px;
+      animation: fadeUp 0.8s 0.1s ease both;
+    }
+
+    .before-after-section .section-label {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .slider-wrapper {
+      position: relative;
+      width: 100%;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--border-aqua);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      user-select: none;
+      cursor: col-resize;
+      background: #000;
+    }
+
+    .slider-wrapper img {
+      display: block;
+      width: 100%;
+      height: auto;
+      pointer-events: none;
+    }
+
+    /* After image — full width, sits behind */
+    .img-after {
+      display: block;
+      width: 100%;
+    }
+
+    /* Before image — clipped by reveal amount */
+    .img-before-wrap {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      overflow: hidden;
+      width: 50%;
+    }
+
+    .img-before-wrap img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: var(--slider-full-width, 100%);
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Divider line */
+    .slider-divider {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 2px;
+      background: #fff;
+      transform: translateX(-50%);
+      pointer-events: none;
+      box-shadow: 0 0 8px rgba(0,0,0,0.6);
+    }
+
+    /* Drag handle */
+    .slider-handle {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 44px;
+      height: 44px;
+      background: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .slider-handle svg {
+      width: 20px;
+      height: 20px;
+      fill: #06101A;
+    }
+
+    /* Labels */
+    .slider-label {
+      position: absolute;
+      top: 14px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 4px 12px;
+      border-radius: 20px;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .slider-label-before {
+      left: 14px;
+      background: rgba(0,0,0,0.55);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
+
+    .slider-label-after {
+      right: 14px;
+      background: rgba(0,194,199,0.25);
+      color: var(--aqua-light);
+      border: 1px solid var(--border-aqua);
+    }
+
+    /* Navigation row */
+    .slider-nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      margin-top: 20px;
+    }
+
+    .slider-nav-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--bg-card);
+      border: 1px solid var(--border-aqua);
+      color: var(--aqua);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .slider-nav-btn:hover {
+      background: var(--aqua-dim);
+      border-color: var(--aqua);
+      transform: scale(1.08);
+    }
+
+    .slider-dots {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .slider-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .slider-dot.active {
+      background: var(--aqua);
+      transform: scale(1.3);
+    }
+
+    .slider-caption {
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-top: 12px;
+      letter-spacing: 0.5px;
+    }
+
     /* Stats row */
     .stats-row {
       display: flex;
@@ -582,10 +763,7 @@
 
     .forgot-link:hover { color: var(--text-muted); }
 
-    .terms-row {
-      display: none;
-      margin-bottom: 14px;
-    }
+    .terms-row { display: none; margin-bottom: 14px; }
 
     .terms-row label {
       display: flex;
@@ -607,18 +785,10 @@
       margin-top: 2px;
       accent-color: var(--aqua);
       cursor: pointer;
-      background: var(--bg-input);
-      border: 1px solid var(--border);
-      border-radius: 3px;
       padding: 0;
     }
 
-    .terms-row a {
-      color: var(--aqua);
-      text-decoration: none;
-      transition: color 0.2s;
-    }
-
+    .terms-row a { color: var(--aqua); text-decoration: none; transition: color 0.2s; }
     .terms-row a:hover { color: var(--aqua-light); }
 
     /* ── ENHANCEMENT FORM ── */
@@ -634,11 +804,7 @@
       z-index: 1;
     }
 
-    .form-header {
-      margin-bottom: 28px;
-      padding-bottom: 24px;
-      border-bottom: 1px solid var(--border);
-    }
+    .form-header { margin-bottom: 28px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
 
     .form-eyebrow {
       font-size: 11px;
@@ -692,9 +858,7 @@
       letter-spacing: 1px;
     }
 
-    input[type="text"],
-    select,
-    input[type="file"] {
+    input[type="text"], select, input[type="file"] {
       width: 100%;
       padding: 12px 16px;
       background: var(--bg-input);
@@ -719,7 +883,6 @@
     }
 
     select option { background: #132333; }
-
     input[type="file"] { cursor: pointer; color: var(--text-muted); font-size: 13px; }
 
     input[type="file"]::-webkit-file-upload-button {
@@ -804,11 +967,7 @@
       animation: fadeUp 0.8s 0.3s ease both;
     }
 
-    .pricing-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-    }
+    .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 
     .pricing-card {
       background: var(--bg-card);
@@ -821,17 +980,9 @@
       overflow: hidden;
     }
 
-    .pricing-card:hover {
-      border-color: var(--border-aqua);
-      background: rgba(0,194,199,0.04);
-      transform: translateY(-2px);
-    }
+    .pricing-card:hover { border-color: var(--border-aqua); background: rgba(0,194,199,0.04); transform: translateY(-2px); }
 
-    .pricing-card.featured {
-      border-color: var(--border-yellow);
-      background: rgba(245,200,66,0.04);
-    }
-
+    .pricing-card.featured { border-color: var(--border-yellow); background: rgba(245,200,66,0.04); }
     .pricing-card.featured:hover { border-color: var(--yellow); }
 
     .pricing-badge {
@@ -848,50 +999,125 @@
       border-radius: 20px;
     }
 
-    .pricing-name {
-      font-size: 11px;
+    .pricing-name { font-size: 11px; font-weight: 500; letter-spacing: 2px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 12px; }
+    .pricing-price { font-family: 'Cormorant Garamond', serif; font-size: 40px; font-weight: 300; color: var(--aqua); line-height: 1; margin-bottom: 4px; }
+    .pricing-card.featured .pricing-price { color: var(--yellow); }
+    .pricing-per { font-size: 11px; color: var(--text-dim); margin-bottom: 16px; }
+    .pricing-divider { width: 100%; height: 1px; background: var(--border); margin-bottom: 16px; }
+    .pricing-credits { font-size: 18px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
+    .pricing-breakdown { font-size: 11px; color: var(--text-dim); line-height: 1.6; }
+
+    /* ── VIDEO SECTION ── */
+    .video-section {
+      width: 100%;
+      max-width: 780px;
+      margin-bottom: 52px;
+      animation: fadeUp 0.8s 0.2s ease both;
+    }
+
+    .video-section .section-label { text-align: center; margin-bottom: 10px; }
+
+    .video-tagline {
+      text-align: center;
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.7;
+      max-width: 560px;
+      margin: 0 auto 24px;
+    }
+
+    .video-tagline em {
+      color: var(--aqua-light);
+      font-style: italic;
+    }
+
+    .video-container {
+      position: relative;
+      width: 100%;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--border-aqua);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+      background: #000;
+      cursor: pointer;
+    }
+
+    .video-container video {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    /* Custom play overlay shown before video starts */
+    .video-play-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(6,16,26,0.55);
+      backdrop-filter: blur(2px);
+      transition: opacity 0.3s;
+      z-index: 5;
+    }
+
+    .video-play-overlay.hidden { opacity: 0; pointer-events: none; }
+
+    .video-play-btn {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: rgba(0,194,199,0.15);
+      border: 2px solid var(--aqua);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.25s;
+      margin-bottom: 14px;
+    }
+
+    .video-play-btn svg {
+      width: 28px;
+      height: 28px;
+      fill: var(--aqua);
+      margin-left: 4px;
+    }
+
+    .video-container:hover .video-play-btn {
+      background: rgba(0,194,199,0.28);
+      transform: scale(1.08);
+    }
+
+    .video-play-label {
+      font-size: 12px;
       font-weight: 500;
       letter-spacing: 2px;
       text-transform: uppercase;
-      color: var(--text-muted);
-      margin-bottom: 12px;
-    }
-
-    .pricing-price {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 40px;
-      font-weight: 300;
-      color: var(--aqua);
-      line-height: 1;
-      margin-bottom: 4px;
-    }
-
-    .pricing-card.featured .pricing-price { color: var(--yellow); }
-
-    .pricing-per {
-      font-size: 11px;
-      color: var(--text-dim);
-      margin-bottom: 16px;
-    }
-
-    .pricing-divider {
-      width: 100%;
-      height: 1px;
-      background: var(--border);
-      margin-bottom: 16px;
-    }
-
-    .pricing-credits {
-      font-size: 18px;
-      font-weight: 500;
       color: var(--text);
-      margin-bottom: 4px;
     }
 
-    .pricing-breakdown {
-      font-size: 11px;
-      color: var(--text-dim);
-      line-height: 1.6;
+    .video-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 16px;
+      background: rgba(0,194,199,0.08);
+      border: 1px solid var(--border-aqua);
+      border-radius: 20px;
+      padding: 6px 16px;
+      font-size: 12px;
+      color: var(--aqua);
+      letter-spacing: 0.5px;
+    }
+
+    .video-badge::before {
+      content: '';
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--aqua);
+      animation: pulse-dot 1.8s infinite;
     }
 
     /* Responsive */
@@ -935,24 +1161,15 @@
     <div class="modal-title">Buy Credits</div>
     <div class="modal-sub">Credits never expire. Use them for images or video animations.</div>
     <div class="pack-option" onclick="purchasePack('starter')">
-      <div>
-        <div class="pack-name">Starter</div>
-        <div class="pack-credits">40 credits — 40 images or 10 videos</div>
-      </div>
+      <div><div class="pack-name">Starter</div><div class="pack-credits">40 credits — 40 images or 10 videos</div></div>
       <div class="pack-price">$25</div>
     </div>
     <div class="pack-option" onclick="purchasePack('professional')">
-      <div>
-        <div class="pack-name">Professional</div>
-        <div class="pack-credits">90 credits — 90 images or 22 videos</div>
-      </div>
+      <div><div class="pack-name">Professional</div><div class="pack-credits">90 credits — 90 images or 22 videos</div></div>
       <div class="pack-price">$50</div>
     </div>
     <div class="pack-option" onclick="purchasePack('studio')">
-      <div>
-        <div class="pack-name">Studio</div>
-        <div class="pack-credits">200 credits — 200 images or 50 videos</div>
-      </div>
+      <div><div class="pack-name">Studio</div><div class="pack-credits">200 credits — 200 images or 50 videos</div></div>
       <div class="pack-price">$100</div>
     </div>
     <button class="btn-close-modal" onclick="closePurchaseModal()">Cancel</button>
@@ -966,14 +1183,12 @@
     <p>Enter your email address and we'll send you a secure reset link.</p>
     <input id="reset-email" type="email" class="reset-input" placeholder="Your email address" />
     <button class="btn-reset-submit btn-reset-blue" onclick="sendResetEmail()">Send Reset Link</button>
-    <p id="reset-msg" style="color:#2ABF7A; font-size:13px; text-align:center; margin-top:14px; display:none; line-height:1.5;">
-      ✓ Check your inbox for the reset link.
-    </p>
+    <p id="reset-msg" style="color:#2ABF7A; font-size:13px; text-align:center; margin-top:14px; display:none; line-height:1.5;">✓ Check your inbox for the reset link.</p>
     <a class="reset-back-link" onclick="hideForgotModal()">← Back to sign in</a>
   </div>
 </div>
 
-<!-- New Password Modal (password reset flow) -->
+<!-- New Password Modal -->
 <div id="newpass-modal">
   <div class="reset-modal-box">
     <h2>Set New Password</h2>
@@ -984,7 +1199,7 @@
   </div>
 </div>
 
-<!-- Change Password Modal (logged-in flow) -->
+<!-- Change Password Modal -->
 <div id="changepass-modal">
   <div class="reset-modal-box">
     <h2>Change Password</h2>
@@ -1011,8 +1226,77 @@
       <em>Stunning Client Presentations</em>
     </h1>
     <p class="hero-body">
-      StudioFinish transforms standard PoolStudio renders into photo-realistic, client-ready visuals. Customize your background environment to match any location, dial in precision lighting and surface materials, then bring your best designs to life as cinematic 5-second videos. Win more proposals. Impress every client.
+      StudioFinish transforms standard PoolStudio renders into photo-realistic, client-ready visuals that close deals. Customize your background to match any location on earth, dial in precision lighting and premium surface materials — then watch your static design come alive as a cinematic 5-second video your clients will never forget.
     </p>
+  </div>
+
+  <!-- ── BEFORE / AFTER SLIDER ── -->
+  <div class="before-after-section">
+    <div class="section-label">See The Difference</div>
+    <p style="text-align:center; font-size:14px; color:var(--text-muted); line-height:1.7; max-width:540px; margin: 0 auto 24px;">
+      Drag the slider to reveal the transformation. Every image below started as a standard VIP3D PoolStudio render — what you see on the right is what your clients will receive.
+    </p>
+
+    <div class="slider-wrapper" id="sliderWrapper">
+      <!-- After image (full width base) -->
+      <img class="img-after" id="sliderAfter" src="assets/After1.jpg" alt="After" draggable="false">
+
+      <!-- Before image (clipped reveal) -->
+      <div class="img-before-wrap" id="sliderBeforeWrap">
+        <img id="sliderBefore" src="assets/Before1.png" alt="Before" draggable="false">
+      </div>
+
+      <!-- Labels -->
+      <span class="slider-label slider-label-before">Before</span>
+      <span class="slider-label slider-label-after">After</span>
+
+      <!-- Divider + handle -->
+      <div class="slider-divider" id="sliderDivider"></div>
+      <div class="slider-handle" id="sliderHandle">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M8 5l-5 7 5 7M16 5l5 7-5 7" stroke="#06101A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="slider-nav">
+      <button class="slider-nav-btn" id="sliderPrev" title="Previous">&#8592;</button>
+      <div class="slider-dots" id="sliderDots"></div>
+      <button class="slider-nav-btn" id="sliderNext" title="Next">&#8594;</button>
+    </div>
+    <div class="slider-caption" id="sliderCaption"></div>
+  </div>
+
+  <!-- ── VIDEO SHOWCASE ── -->
+  <div class="video-section">
+    <div class="section-label">Bring It To Life</div>
+    <p class="video-tagline">
+      Still images close deals — <em>videos seal them.</em> Every StudioFinish render can be transformed into a fluid, cinematic 5-second animation your clients can share, post, and present with pride. Watch what your designs look like in motion.
+    </p>
+
+    <div class="video-container" id="videoContainer" onclick="playVideo()">
+      <video
+        id="showcaseVideo"
+        src="assets/Landscape_Animation (1).mp4"
+        playsinline
+        preload="metadata"
+        poster="assets/After1.jpg"
+      ></video>
+
+      <div class="video-play-overlay" id="videoOverlay">
+        <div class="video-play-btn">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M5 3l14 9-14 9V3z"/>
+          </svg>
+        </div>
+        <div class="video-play-label">Watch the Animation</div>
+      </div>
+    </div>
+
+    <div style="text-align:center;">
+      <div class="video-badge">5-Second Cinematic Video · Delivered by Email · 4 Credits</div>
+    </div>
   </div>
 
   <!-- Stats -->
@@ -1061,7 +1345,6 @@
   <div class="pricing-section">
     <div class="section-label">Credit Packages</div>
     <div class="pricing-grid">
-
       <div class="pricing-card">
         <div class="pricing-name">Starter</div>
         <div class="pricing-price">$25</div>
@@ -1070,7 +1353,6 @@
         <div class="pricing-credits">40 Credits</div>
         <div class="pricing-breakdown">40 images<br>or 10 videos</div>
       </div>
-
       <div class="pricing-card featured">
         <div class="pricing-badge">Popular</div>
         <div class="pricing-name">Professional</div>
@@ -1080,7 +1362,6 @@
         <div class="pricing-credits">90 Credits</div>
         <div class="pricing-breakdown">90 images<br>or 22 videos</div>
       </div>
-
       <div class="pricing-card">
         <div class="pricing-name">Studio</div>
         <div class="pricing-price">$100</div>
@@ -1089,7 +1370,6 @@
         <div class="pricing-credits">200 Credits</div>
         <div class="pricing-breakdown">200 images<br>or 50 videos</div>
       </div>
-
     </div>
     <p style="text-align:center; font-size:12px; color:var(--text-dim); margin-top:14px; line-height:1.6;">
       Credits never expire &nbsp;·&nbsp; 1 credit per image &nbsp;·&nbsp; 4 credits per 5-second video
@@ -1125,7 +1405,6 @@
       <div class="form-eyebrow">StudioFinish</div>
       <div class="form-title">Enhancement Settings</div>
     </div>
-
     <div class="instructions-box">
       <strong>Before You Upload</strong>
       <ul>
@@ -1134,7 +1413,6 @@
         <li><strong>Quality:</strong> 4K processes faster. 8K delivers maximum fidelity.</li>
       </ul>
     </div>
-
     <div class="form-group">
       <label for="back_plane">Back Plane Environment</label>
       <input type="text" id="back_plane" name="back_plane" placeholder="e.g. Sonoran Desert, Scottsdale Residential">
@@ -1176,9 +1454,7 @@
       <label for="images">Upload Renders</label>
       <input type="file" id="images" name="images" multiple accept="image/*" />
     </div>
-
     <button type="submit">Enhance Images →</button>
-
     <div class="tips-box">
       <strong>Pricing</strong>
       <ul>
@@ -1191,7 +1467,6 @@
 
 </div>
 
-<!-- Footer -->
 <footer class="landing-footer">
   <div class="footer-brand">StudioFinish</div>
   <div>Photo-realistic rendering for pool &amp; landscape professionals</div>
@@ -1247,6 +1522,179 @@ window.addEventListener('DOMContentLoaded', async () => {
       localStorage.setItem('authToken', authToken);
     }
   }, 50 * 60 * 1000);
+
+  initSlider();
+});
+
+// ── Before/After Slider ────────────────────────────────────────────────────
+/*
+  ADD YOUR IMAGE PAIRS HERE.
+  - before: path to the original VIP3D render (in your assets/ folder)
+  - after:  path to the StudioFinish enhanced version
+  - caption: short description shown below the slider
+  Images should be the same dimensions and landscape orientation.
+*/
+const sliderPairs = [
+  {
+    before: 'assets/Before1.png',
+    after:  'assets/After1.jpg',
+    caption: 'VIP3D Render → StudioFinish Photo-Realistic Result'
+  },
+  {
+    before: 'assets/Before2.png',
+    after:  'assets/After2.jpg',
+    caption: 'VIP3D Render → StudioFinish Photo-Realistic Result'
+  },
+  {
+    before: 'assets/Before3.png',
+    after:  'assets/After3.jpg',
+    caption: 'VIP3D Render → StudioFinish Photo-Realistic Result'
+  }
+];
+
+let currentSlide = 0;
+let isDragging = false;
+let sliderPercent = 50;
+
+function initSlider() {
+  const wrapper   = document.getElementById('sliderWrapper');
+  const dotsEl    = document.getElementById('sliderDots');
+
+  // Build dots
+  sliderPairs.forEach((_, i) => {
+    const dot = document.createElement('div');
+    dot.className = 'slider-dot' + (i === 0 ? ' active' : '');
+    dot.addEventListener('click', () => goToSlide(i));
+    dotsEl.appendChild(dot);
+  });
+
+  // Set initial slide
+  goToSlide(0);
+
+  // Nav buttons
+  document.getElementById('sliderPrev').addEventListener('click', () => {
+    goToSlide((currentSlide - 1 + sliderPairs.length) % sliderPairs.length);
+  });
+  document.getElementById('sliderNext').addEventListener('click', () => {
+    goToSlide((currentSlide + 1) % sliderPairs.length);
+  });
+
+  // Drag events — mouse
+  wrapper.addEventListener('mousedown', startDrag);
+  window.addEventListener('mousemove', onDrag);
+  window.addEventListener('mouseup', stopDrag);
+
+  // Drag events — touch
+  wrapper.addEventListener('touchstart', startDrag, { passive: true });
+  window.addEventListener('touchmove', onDrag, { passive: false });
+  window.addEventListener('touchend', stopDrag);
+}
+
+function goToSlide(index) {
+  currentSlide = index;
+  const pair = sliderPairs[index];
+
+  // Swap images with a quick fade
+  const after  = document.getElementById('sliderAfter');
+  const before = document.getElementById('sliderBefore');
+
+  after.style.opacity  = '0';
+  before.style.opacity = '0';
+
+  setTimeout(() => {
+    after.src  = pair.after;
+    before.src = pair.before;
+    after.style.transition  = 'opacity 0.35s';
+    before.style.transition = 'opacity 0.35s';
+    after.style.opacity  = '1';
+    before.style.opacity = '1';
+  }, 150);
+
+  // Reset divider to centre
+  sliderPercent = 50;
+  applySliderPercent();
+
+  // Update dots
+  document.querySelectorAll('.slider-dot').forEach((d, i) => {
+    d.classList.toggle('active', i === index);
+  });
+
+  // Caption
+  document.getElementById('sliderCaption').textContent = pair.caption;
+
+  // Sync before-image full width
+  syncBeforeWidth();
+}
+
+function syncBeforeWidth() {
+  const wrapper = document.getElementById('sliderWrapper');
+  const before  = document.getElementById('sliderBefore');
+  before.style.width = wrapper.offsetWidth + 'px';
+}
+
+function applySliderPercent() {
+  const wrap    = document.getElementById('sliderBeforeWrap');
+  const divider = document.getElementById('sliderDivider');
+  const handle  = document.getElementById('sliderHandle');
+
+  wrap.style.width      = sliderPercent + '%';
+  divider.style.left    = sliderPercent + '%';
+  handle.style.left     = sliderPercent + '%';
+}
+
+function getEventX(e) {
+  return e.touches ? e.touches[0].clientX : e.clientX;
+}
+
+function startDrag(e) {
+  isDragging = true;
+  syncBeforeWidth();
+}
+
+function onDrag(e) {
+  if (!isDragging) return;
+  if (e.cancelable) e.preventDefault();
+
+  const wrapper = document.getElementById('sliderWrapper');
+  const rect    = wrapper.getBoundingClientRect();
+  const x       = getEventX(e) - rect.left;
+  sliderPercent = Math.min(98, Math.max(2, (x / rect.width) * 100));
+  applySliderPercent();
+}
+
+function stopDrag() {
+  isDragging = false;
+}
+
+// Re-sync on resize
+window.addEventListener('resize', () => {
+  syncBeforeWidth();
+  applySliderPercent();
+});
+
+// ── Video Showcase ─────────────────────────────────────────────────────────
+function playVideo() {
+  const video   = document.getElementById('showcaseVideo');
+  const overlay = document.getElementById('videoOverlay');
+
+  if (video.paused) {
+    video.play();
+    overlay.classList.add('hidden');
+  } else {
+    video.pause();
+    overlay.classList.remove('hidden');
+  }
+}
+
+// Show overlay again when video ends
+document.addEventListener('DOMContentLoaded', () => {
+  const video = document.getElementById('showcaseVideo');
+  if (video) {
+    video.addEventListener('ended', () => {
+      document.getElementById('videoOverlay').classList.remove('hidden');
+      video.currentTime = 0;
+    });
+  }
 });
 
 // ── Auth ───────────────────────────────────────────────────────────────────
@@ -1357,7 +1805,6 @@ async function sendResetEmail() {
   } catch (err) { alert('Connection error. Please try again.'); }
 }
 
-// Password reset flow (from email link)
 async function updatePassword() {
   const password = document.getElementById('new-password').value;
   const msgEl = document.getElementById('newpass-msg');
@@ -1398,7 +1845,7 @@ async function updatePassword() {
   }
 }
 
-// ── Change Password (logged-in flow) ──────────────────────────────────────
+// ── Change Password ────────────────────────────────────────────────────────
 function openChangePasswordModal() {
   document.getElementById('changepass-modal').style.display = 'flex';
   document.getElementById('current-password').value = '';
@@ -1426,21 +1873,18 @@ async function changePassword() {
     msgEl.style.display = 'block';
     return;
   }
-
   if (!newPassword || newPassword.length < 6) {
     msgEl.style.color = '#ff8080';
     msgEl.textContent = 'New password must be at least 6 characters.';
     msgEl.style.display = 'block';
     return;
   }
-
   if (newPassword !== confirmPassword) {
     msgEl.style.color = '#ff8080';
     msgEl.textContent = 'New passwords do not match.';
     msgEl.style.display = 'block';
     return;
   }
-
   if (currentPassword === newPassword) {
     msgEl.style.color = '#ff8080';
     msgEl.textContent = 'New password must be different from your current password.';
@@ -1449,7 +1893,6 @@ async function changePassword() {
   }
 
   try {
-    // First verify current password by re-authenticating
     const { data: userData } = await supabaseClient.auth.getUser(authToken);
     if (!userData?.user?.email) {
       msgEl.style.color = '#ff8080';
@@ -1470,13 +1913,9 @@ async function changePassword() {
       return;
     }
 
-    // Current password verified — now update to new password
     const res = await fetch('/auth/update-password', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + authToken
-      },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
       body: JSON.stringify({ password: newPassword })
     });
 
@@ -1484,9 +1923,7 @@ async function changePassword() {
       msgEl.style.color = '#2ABF7A';
       msgEl.textContent = '✓ Password updated successfully.';
       msgEl.style.display = 'block';
-      setTimeout(() => {
-        closeChangePasswordModal();
-      }, 1800);
+      setTimeout(() => closeChangePasswordModal(), 1800);
     } else {
       const data = await res.json();
       msgEl.style.color = '#ff8080';
