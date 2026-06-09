@@ -12,6 +12,7 @@ const app = express();
 const upload = multer();
 
 const N8N_BASE_URL = 'https://courteous-solace-production-413f.up.railway.app';
+const UPSCALE_CALLBACK_SECRET = 'sf_upscale_callback_2024';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -271,24 +272,132 @@ app.post('/api/animate', requireAuth, async (req, res) => {
   }
 });
 
-// ── Upscale Proxy (no credit charge) ─────────────────────────────────────────
+// ── Upscale: Start Job (async — returns immediately) ─────────────────────────
 app.post('/api/upscale', requireAuth, async (req, res) => {
+  const { imageUrl, jobId, imageIndex } = req.body;
+
+  if (!imageUrl || !jobId) {
+    return res.status(400).json({ error: 'Missing imageUrl or jobId' });
+  }
+
   try {
+    // Create job record in Supabase
+    const { error: insertError } = await supabase
+      .from('upscale_jobs')
+      .insert({
+        job_id: jobId,
+        image_index: String(imageIndex),
+        user_id: req.user.id,
+        original_url: imageUrl,
+        status: 'processing'
+      });
+
+    if (insertError) {
+      console.error('Supabase insert error:', insertError.message);
+      return res.status(500).json({ error: 'Could not create upscale job' });
+    }
+
+    // Fire and forget — don't await the full n8n response
     const n8nUrl = `${N8N_BASE_URL}/webhook/upscale_image`;
-    const response = await axios.post(n8nUrl, {
-      image_url: req.body.imageUrl,
-      job_id: req.body.jobId,
-      image_index: req.body.imageIndex,
+    axios.post(n8nUrl, {
+      image_url: imageUrl,
+      job_id: jobId,
+      image_index: String(imageIndex),
       user_email: req.user.email,
       output_quality: req.body.outputQuality || 80
     }, {
       headers: { 'Content-Type': 'application/json' },
       timeout: 120000
+    }).catch(err => {
+      console.error('n8n upscale fire-and-forget error:', err.message);
     });
-    return res.status(200).json(response.data);
+
+    // Return immediately
+    return res.status(200).json({
+      status: 'processing',
+      job_id: jobId,
+      image_index: String(imageIndex)
+    });
+
   } catch (error) {
-    console.error('Upscale error:', error.response?.data || error.message);
+    console.error('Upscale error:', error.message);
     return res.status(500).json({ error: 'Upscale request failed' });
+  }
+});
+
+// ── Upscale: Callback from n8n (updates Supabase when done) ──────────────────
+app.post('/api/upscale-callback', async (req, res) => {
+  // Verify callback secret
+  const secret = req.headers['x-callback-secret'];
+  if (secret !== UPSCALE_CALLBACK_SECRET) {
+    return res.status(403).json({ error: 'Invalid callback secret' });
+  }
+
+  const { job_id, image_index, status, upscaled_url, error_message } = req.body;
+
+  if (!job_id || !image_index) {
+    return res.status(400).json({ error: 'Missing job_id or image_index' });
+  }
+
+  try {
+    const updateData = {
+      status: status || 'completed',
+      completed_at: new Date()
+    };
+
+    if (upscaled_url) updateData.upscaled_url = upscaled_url;
+    if (error_message) updateData.error_message = error_message;
+
+    const { error } = await supabase
+      .from('upscale_jobs')
+      .update(updateData)
+      .eq('job_id', job_id)
+      .eq('image_index', String(image_index));
+
+    if (error) {
+      console.error('Callback update error:', error.message);
+      return res.status(500).json({ error: 'Could not update job' });
+    }
+
+    console.log(`Upscale completed: ${job_id} image ${image_index}`);
+    return res.status(200).json({ received: true });
+
+  } catch (error) {
+    console.error('Callback error:', error.message);
+    return res.status(500).json({ error: 'Callback processing failed' });
+  }
+});
+
+// ── Upscale: Status Check (frontend polls this) ──────────────────────────────
+app.get('/api/upscale-status', requireAuth, async (req, res) => {
+  const { jobId, imageIndex } = req.query;
+
+  if (!jobId || !imageIndex) {
+    return res.status(400).json({ error: 'Missing jobId or imageIndex' });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('upscale_jobs')
+      .select('status, upscaled_url, error_message')
+      .eq('job_id', jobId)
+      .eq('image_index', String(imageIndex))
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({
+      status: data.status,
+      upscaled_url: data.upscaled_url || null,
+      error_message: data.error_message || null
+    });
+
+  } catch (error) {
+    console.error('Status check error:', error.message);
+    return res.status(500).json({ error: 'Status check failed' });
   }
 });
 
