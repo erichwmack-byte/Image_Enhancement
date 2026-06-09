@@ -271,6 +271,26 @@ app.post('/api/animate', requireAuth, async (req, res) => {
   }
 });
 
+// ── Upscale Proxy (no credit charge) ─────────────────────────────────────────
+app.post('/api/upscale', requireAuth, async (req, res) => {
+  try {
+    const n8nUrl = `${N8N_BASE_URL}/webhook/upscale_image`;
+    const response = await axios.post(n8nUrl, {
+      image_url: req.body.imageUrl,
+      job_id: req.body.jobId,
+      image_index: req.body.imageIndex,
+      user_email: req.user.email,
+      output_quality: req.body.outputQuality || 80
+    }, {
+      headers: { 'Content-Type': 'application/json' }
+    });
+    return res.status(200).json(response.data);
+  } catch (error) {
+    console.error('Upscale error:', error.response?.data || error.message);
+    return res.status(500).json({ error: 'Upscale request failed' });
+  }
+});
+
 // ── Status Proxy ──────────────────────────────────────────────────────────────
 app.get('/api/status', requireAuth, async (req, res) => {
   const { jobId } = req.query;
