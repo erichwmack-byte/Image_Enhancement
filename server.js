@@ -282,7 +282,8 @@ app.post('/api/upscale', requireAuth, async (req, res) => {
       user_email: req.user.email,
       output_quality: req.body.outputQuality || 80
     }, {
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 120000
     });
     return res.status(200).json(response.data);
   } catch (error) {
