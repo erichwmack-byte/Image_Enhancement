@@ -12,7 +12,7 @@ const app = express();
 const upload = multer();
 
 const N8N_BASE_URL = 'https://courteous-solace-production-413f.up.railway.app';
-const UPSCALE_CALLBACK_SECRET = 'sf_upscale_callback_2024';
+const CALLBACK_SECRET = 'sf_upscale_callback_2024';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -281,7 +281,6 @@ app.post('/api/upscale', requireAuth, async (req, res) => {
   }
 
   try {
-    // Create job record in Supabase
     const { error: insertError } = await supabase
       .from('upscale_jobs')
       .insert({
@@ -297,7 +296,6 @@ app.post('/api/upscale', requireAuth, async (req, res) => {
       return res.status(500).json({ error: 'Could not create upscale job' });
     }
 
-    // Fire and forget — don't await the full n8n response
     const n8nUrl = `${N8N_BASE_URL}/webhook/upscale_image`;
     axios.post(n8nUrl, {
       image_url: imageUrl,
@@ -312,7 +310,6 @@ app.post('/api/upscale', requireAuth, async (req, res) => {
       console.error('n8n upscale fire-and-forget error:', err.message);
     });
 
-    // Return immediately
     return res.status(200).json({
       status: 'processing',
       job_id: jobId,
@@ -325,11 +322,10 @@ app.post('/api/upscale', requireAuth, async (req, res) => {
   }
 });
 
-// ── Upscale: Callback from n8n (updates Supabase when done) ──────────────────
+// ── Upscale: Callback from n8n ───────────────────────────────────────────────
 app.post('/api/upscale-callback', async (req, res) => {
-  // Verify callback secret
   const secret = req.headers['x-callback-secret'];
-  if (secret !== UPSCALE_CALLBACK_SECRET) {
+  if (secret !== CALLBACK_SECRET) {
     return res.status(403).json({ error: 'Invalid callback secret' });
   }
 
@@ -344,7 +340,6 @@ app.post('/api/upscale-callback', async (req, res) => {
       status: status || 'completed',
       completed_at: new Date()
     };
-
     if (upscaled_url) updateData.upscaled_url = upscaled_url;
     if (error_message) updateData.error_message = error_message;
 
@@ -368,7 +363,7 @@ app.post('/api/upscale-callback', async (req, res) => {
   }
 });
 
-// ── Upscale: Status Check (frontend polls this) ──────────────────────────────
+// ── Upscale: Status Check ────────────────────────────────────────────────────
 app.get('/api/upscale-status', requireAuth, async (req, res) => {
   const { jobId, imageIndex } = req.query;
 
@@ -397,6 +392,133 @@ app.get('/api/upscale-status', requireAuth, async (req, res) => {
 
   } catch (error) {
     console.error('Status check error:', error.message);
+    return res.status(500).json({ error: 'Status check failed' });
+  }
+});
+
+// ── Refine: Start Job (async — returns immediately) ──────────────────────────
+app.post('/api/refine', requireAuth, async (req, res) => {
+  const { imageUrl, jobId, imageIndex, prompt } = req.body;
+
+  if (!imageUrl || !jobId || !prompt) {
+    return res.status(400).json({ error: 'Missing imageUrl, jobId, or prompt' });
+  }
+
+  try {
+    const { error: insertError } = await supabase
+      .from('refine_jobs')
+      .insert({
+        job_id: jobId,
+        image_index: String(imageIndex),
+        user_id: req.user.id,
+        source_url: imageUrl,
+        prompt: prompt,
+        status: 'processing'
+      });
+
+    if (insertError) {
+      console.error('Supabase insert error:', insertError.message);
+      return res.status(500).json({ error: 'Could not create refine job' });
+    }
+
+    const n8nUrl = `${N8N_BASE_URL}/webhook/refine_image`;
+    axios.post(n8nUrl, {
+      image_url: imageUrl,
+      job_id: jobId,
+      image_index: String(imageIndex),
+      user_email: req.user.email,
+      prompt: prompt
+    }, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 120000
+    }).catch(err => {
+      console.error('n8n refine fire-and-forget error:', err.message);
+    });
+
+    return res.status(200).json({
+      status: 'processing',
+      job_id: jobId,
+      image_index: String(imageIndex)
+    });
+
+  } catch (error) {
+    console.error('Refine error:', error.message);
+    return res.status(500).json({ error: 'Refine request failed' });
+  }
+});
+
+// ── Refine: Callback from n8n ────────────────────────────────────────────────
+app.post('/api/refine-callback', async (req, res) => {
+  const secret = req.headers['x-callback-secret'];
+  if (secret !== CALLBACK_SECRET) {
+    return res.status(403).json({ error: 'Invalid callback secret' });
+  }
+
+  const { job_id, image_index, status, refined_url, error_message } = req.body;
+
+  if (!job_id || !image_index) {
+    return res.status(400).json({ error: 'Missing job_id or image_index' });
+  }
+
+  try {
+    const updateData = {
+      status: status || 'completed',
+      completed_at: new Date()
+    };
+    if (refined_url) updateData.refined_url = refined_url;
+    if (error_message) updateData.error_message = error_message;
+
+    const { error } = await supabase
+      .from('refine_jobs')
+      .update(updateData)
+      .eq('job_id', job_id)
+      .eq('image_index', String(image_index));
+
+    if (error) {
+      console.error('Refine callback update error:', error.message);
+      return res.status(500).json({ error: 'Could not update job' });
+    }
+
+    console.log(`Refine completed: ${job_id} image ${image_index}`);
+    return res.status(200).json({ received: true });
+
+  } catch (error) {
+    console.error('Refine callback error:', error.message);
+    return res.status(500).json({ error: 'Callback processing failed' });
+  }
+});
+
+// ── Refine: Status Check ─────────────────────────────────────────────────────
+app.get('/api/refine-status', requireAuth, async (req, res) => {
+  const { jobId, imageIndex } = req.query;
+
+  if (!jobId || !imageIndex) {
+    return res.status(400).json({ error: 'Missing jobId or imageIndex' });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('refine_jobs')
+      .select('status, refined_url, error_message')
+      .eq('job_id', jobId)
+      .eq('image_index', String(imageIndex))
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({
+      status: data.status,
+      refined_url: data.refined_url || null,
+      error_message: data.error_message || null
+    });
+
+  } catch (error) {
+    console.error('Refine status check error:', error.message);
     return res.status(500).json({ error: 'Status check failed' });
   }
 });
