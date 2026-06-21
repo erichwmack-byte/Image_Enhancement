@@ -7,6 +7,8 @@ const FormData = require('form-data');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
 const Stripe = require('stripe');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const crypto = require('crypto');
 
 const app = express();
 const upload = multer();
@@ -14,11 +16,22 @@ const upload = multer();
 const N8N_BASE_URL = 'https://courteous-solace-production-413f.up.railway.app';
 const CALLBACK_SECRET = 'sf_upscale_callback_2024';
 
+const S3_BUCKET = 'imageenhancement-production-storage';
+const S3_REGION = process.env.AWS_REGION || 'us-east-2';
+
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 );
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+const s3Client = new S3Client({
+  region: S3_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+  }
+});
 
 const CREDIT_PACKS = {
   starter:      { credits: 40,  price: 2500,  name: '$25 - 40 Credits' },
@@ -44,6 +57,23 @@ async function requireAuth(req, res, next) {
   if (error || !user) return res.status(401).json({ error: 'Invalid token' });
   req.user = user;
   next();
+}
+
+// ── S3 Helper ─────────────────────────────────────────────────────────────────
+async function uploadBufferToS3(buffer, key, contentType) {
+  const command = new PutObjectCommand({
+    Bucket: S3_BUCKET,
+    Key: key,
+    Body: buffer,
+    ContentType: contentType || 'image/jpeg',
+    ACL: 'public-read'
+  });
+  await s3Client.send(command);
+  return `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/${key}`;
+}
+
+function generateJobId() {
+  return crypto.randomBytes(8).toString('hex');
 }
 
 // ── Auth Routes ───────────────────────────────────────────────────────────────
@@ -203,9 +233,16 @@ app.post('/webhooks/stripe', async (req, res) => {
 });
 
 // ── Enhance Proxy (with credit check) ────────────────────────────────────────
+// Phase 1 change: server.js now uploads each raw file to S3 itself, creates a
+// `projects` row + one `project_images` row per image (status: processing),
+// then forwards S3 URLs (not binaries) to n8n instead of raw multipart files.
 app.post('/api/enhance', requireAuth, upload.array('images'), async (req, res) => {
   const imageCount = req.files?.length || 1;
   const creditsNeeded = imageCount * CREDIT_COSTS.enhance;
+
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ error: 'No images provided' });
+  }
 
   const deducted = await deductCredits(
     req.user.id,
@@ -215,34 +252,88 @@ app.post('/api/enhance', requireAuth, upload.array('images'), async (req, res) =
   );
   if (!deducted) return res.status(402).json({ error: 'Insufficient credits' });
 
+  const jobId = generateJobId();
+
   try {
-    const n8nUrl = `${N8N_BASE_URL}/webhook/Batch_EnhancementOptionsWeb`;
-    const form = new FormData();
-    form.append('back_plane', req.body.back_plane || '');
-    form.append('time_of_day', req.body.time_of_day || '');
-    form.append('paver_style', req.body.paver_style || '');
-    form.append('paver_pattern', req.body.paver_pattern || '');
-    form.append('image_quality', req.body.image_quality || '');
-    form.append('user_email', req.user.email || '');
-    form.append('user_id', req.user.id || '');
-    if (req.files?.length > 0) {
-      req.files.forEach(file => {
-        form.append('images', file.buffer, {
-          filename: file.originalname,
-          contentType: file.mimetype
-        });
+    // 1. Upload every raw file to S3 first, in parallel.
+    const uploads = await Promise.all(
+      req.files.map(async (file, index) => {
+        const ext = (file.originalname.split('.').pop() || 'jpg').toLowerCase();
+        const key = `${jobId}_raw_${index}_${Date.now()}.${ext}`;
+        const rawUploadUrl = await uploadBufferToS3(file.buffer, key, file.mimetype);
+        return { index, rawUploadUrl, filename: file.originalname };
+      })
+    );
+
+    // 2. Create the parent `projects` row.
+    const { error: projectError } = await supabase
+      .from('projects')
+      .insert({
+        user_id: req.user.id,
+        job_id: jobId,
+        project_name: `Project — ${new Date().toLocaleDateString()}`,
+        status: 'processing'
       });
+
+    if (projectError) {
+      console.error('Supabase project insert error:', projectError.message);
+      return res.status(500).json({ error: 'Could not create project' });
     }
-    const response = await axios.post(n8nUrl, form, {
-      headers: { ...form.getHeaders() },
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity
+
+    // 3. Create one `project_images` row per uploaded image.
+    const { data: projectRow } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('job_id', jobId)
+      .single();
+
+    const projectImagesPayload = uploads.map(u => ({
+      project_id: projectRow.id,
+      image_index: String(u.index),
+      image_name: `Image ${u.index + 1}`,
+      raw_upload_url: u.rawUploadUrl,
+      status: 'processing'
+    }));
+
+    const { error: imagesError } = await supabase
+      .from('project_images')
+      .insert(projectImagesPayload);
+
+    if (imagesError) {
+      console.error('Supabase project_images insert error:', imagesError.message);
+      return res.status(500).json({ error: 'Could not create project images' });
+    }
+
+    // 4. Forward S3 URLs (not binaries) to n8n.
+    const n8nUrl = `${N8N_BASE_URL}/webhook/Batch_EnhancementOptionsWeb`;
+    const response = await axios.post(n8nUrl, {
+      job_id: jobId,
+      back_plane: req.body.back_plane || '',
+      time_of_day: req.body.time_of_day || '',
+      paver_style: req.body.paver_style || '',
+      paver_pattern: req.body.paver_pattern || '',
+      image_quality: req.body.image_quality || '',
+      user_email: req.user.email || '',
+      user_id: req.user.id || '',
+      images: uploads.map(u => ({
+        image_index: String(u.index),
+        raw_upload_url: u.rawUploadUrl
+      }))
+    }, {
+      headers: { 'Content-Type': 'application/json' }
     });
+
     const responseData = response.data;
-    if (!responseData.jobId) {
+    if (!responseData.jobId && !responseData.job_id) {
       console.warn('Warning: n8n responded without a jobId.');
     }
-    return res.status(200).json(responseData);
+
+    return res.status(200).json({
+      jobId: jobId,
+      status: 'pending',
+      ...responseData
+    });
+
   } catch (error) {
     const errorData = error.response?.data || error.message;
     console.error('Enhance error:', errorData);
@@ -352,6 +443,28 @@ app.post('/api/upscale-callback', async (req, res) => {
     if (error) {
       console.error('Callback update error:', error.message);
       return res.status(500).json({ error: 'Could not update job' });
+    }
+
+    // Phase 1 addition: also update the canonical project_images row so the
+    // history gallery / badges always reflect the latest upscale state.
+    if (upscaled_url) {
+      const { data: projectRow } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('job_id', job_id)
+        .single();
+
+      if (projectRow) {
+        await supabase
+          .from('project_images')
+          .update({
+            upscaled_url: upscaled_url,
+            current_url: upscaled_url,
+            resolution_badge: '4K'
+          })
+          .eq('project_id', projectRow.id)
+          .eq('image_index', String(image_index));
+      }
     }
 
     console.log(`Upscale completed: ${job_id} image ${image_index}`);
@@ -479,6 +592,23 @@ app.post('/api/refine-callback', async (req, res) => {
       return res.status(500).json({ error: 'Could not update job' });
     }
 
+    // Phase 1 addition: keep project_images.current_url in sync with refine results.
+    if (refined_url) {
+      const { data: projectRow } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('job_id', job_id)
+        .single();
+
+      if (projectRow) {
+        await supabase
+          .from('project_images')
+          .update({ current_url: refined_url })
+          .eq('project_id', projectRow.id)
+          .eq('image_index', String(image_index));
+      }
+    }
+
     console.log(`Refine completed: ${job_id} image ${image_index}`);
     return res.status(200).json({ received: true });
 
@@ -520,6 +650,64 @@ app.get('/api/refine-status', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Refine status check error:', error.message);
     return res.status(500).json({ error: 'Status check failed' });
+  }
+});
+
+// ── Project: Enhancement Job Completion Callback from n8n ───────────────────
+// Phase 2 will extend this further (healed_url etc). For Phase 1, n8n's
+// Job Completed step is unchanged (still writes to Sheets); this route is
+// added now so n8n can optionally start posting back to Supabase as soon
+// as the Batch Enhancement workflow is updated in Step 1.3/1.4.
+app.post('/api/project-image-update', async (req, res) => {
+  const secret = req.headers['x-callback-secret'];
+  if (secret !== CALLBACK_SECRET) {
+    return res.status(403).json({ error: 'Invalid callback secret' });
+  }
+
+  const { job_id, image_index, original_url, enhanced_url, healed_url, status, error_message } = req.body;
+
+  if (!job_id || image_index === undefined) {
+    return res.status(400).json({ error: 'Missing job_id or image_index' });
+  }
+
+  try {
+    const { data: projectRow, error: projectLookupError } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('job_id', job_id)
+      .single();
+
+    if (projectLookupError || !projectRow) {
+      console.error('Project lookup error:', projectLookupError?.message);
+      return res.status(404).json({ error: 'Project not found for job_id' });
+    }
+
+    const updateData = {};
+    if (original_url) updateData.original_url = original_url;
+    if (enhanced_url) updateData.enhanced_url = enhanced_url;
+    if (healed_url) {
+      updateData.healed_url = healed_url;
+      updateData.current_url = healed_url;
+    }
+    if (status) updateData.status = status;
+    if (error_message) updateData.error_message = error_message;
+
+    const { error: updateError } = await supabase
+      .from('project_images')
+      .update(updateData)
+      .eq('project_id', projectRow.id)
+      .eq('image_index', String(image_index));
+
+    if (updateError) {
+      console.error('project_images update error:', updateError.message);
+      return res.status(500).json({ error: 'Could not update project image' });
+    }
+
+    return res.status(200).json({ received: true });
+
+  } catch (error) {
+    console.error('project-image-update error:', error.message);
+    return res.status(500).json({ error: 'Update processing failed' });
   }
 });
 
