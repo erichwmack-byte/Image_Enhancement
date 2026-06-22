@@ -1,5 +1,3 @@
-
-// build-cache-bust
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
 
@@ -666,7 +664,7 @@ app.post('/api/project-image-update', async (req, res) => {
     return res.status(403).json({ error: 'Invalid callback secret' });
   }
 
-  const { job_id, image_index, original_url, enhanced_url, healed_url, status, error_message } = req.body;
+  const { job_id, image_index, original_url, enhanced_url, healed_url, current_url, status, error_message } = req.body;
 
   if (!job_id || image_index === undefined) {
     return res.status(400).json({ error: 'Missing job_id or image_index' });
@@ -690,6 +688,10 @@ app.post('/api/project-image-update', async (req, res) => {
     if (healed_url) {
       updateData.healed_url = healed_url;
       updateData.current_url = healed_url;
+    } else if (current_url) {
+      // Interim path (pre-Phase 2): explicit current_url sent directly,
+      // e.g. pointing at enhanced_url until auto-heal exists.
+      updateData.current_url = current_url;
     }
     if (status) updateData.status = status;
     if (error_message) updateData.error_message = error_message;
