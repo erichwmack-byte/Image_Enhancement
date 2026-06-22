@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -141,7 +142,7 @@
   .stage:hover .expand{opacity:1}
 
   /* compare slider */
-  .compare{position:relative;width:100%;height:100%;user-select:none}
+  .compare{position:absolute;inset:0;user-select:none;touch-action:none}
   .compare img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
   .compare .top{clip-path:inset(0 calc(100% - var(--pct,50%)) 0 0)}
   .cmp-divider{position:absolute;top:0;bottom:0;left:var(--pct,50%);width:2px;
@@ -322,8 +323,8 @@ async function loadCredits(){
 async function loadAlbums(){
   const grid=$('#albumGrid');
   try{
-    const d=await api('/api/projects');
-    ALBUMS=d.projects||[];
+    const d=await api('/api/albums');
+    ALBUMS=d.albums||[];
     if(!ALBUMS.length){
       grid.innerHTML='';
       const e=el('div','empty');
@@ -347,7 +348,7 @@ function albumTile(a){
       : '<div class="tile-cover empty">No preview</div>')+
     '<div class="tile-scrim"></div>'+
     '<div class="tile-body"><div class="meta">'+
-      '<h3>'+esc(a.projectName)+'</h3>'+
+      '<h3>'+esc(a.name)+'</h3>'+
       '<div class="sub">'+a.imageCount+' image'+(a.imageCount===1?'':'s')+' · '+fmtDate(a.createdAt)+'</div>'+
     '</div>'+
     '<button class="tile-rename" title="Rename" aria-label="Rename album">✎</button></div>';
@@ -357,29 +358,29 @@ function albumTile(a){
 }
 
 async function renameAlbum(a){
-  const name=prompt('Rename album',a.projectName);
-  if(name==null||!name.trim()||name.trim()===a.projectName) return;
+  const name=prompt('Rename album',a.name);
+  if(name==null||!name.trim()||name.trim()===a.name) return;
   try{
-    await api('/api/project/'+a.projectId,{method:'PATCH',body:{projectName:name.trim()}});
-    a.projectName=name.trim();
-    if(current.projectId===a.projectId){ current.name=a.projectName; $('#albumTitle').textContent=a.projectName; }
+    await api('/api/album/'+a.albumId,{method:'PATCH',body:{name:name.trim()}});
+    a.name=name.trim();
+    if(current.albumId===a.albumId){ current.name=a.name; $('#albumTitle').textContent=a.name; }
     loadAlbums(); toast('Album renamed');
   }catch(e){ toast(e.message,true); }
 }
 
 /* ── Album detail ── */
 async function openAlbum(a){
-  current={jobId:a.jobId,projectId:a.projectId,name:a.projectName,images:[]};
+  current={albumId:a.albumId,name:a.name,images:[]};
   $('#albumsView').classList.add('hidden');
   $('#albumView').classList.remove('hidden');
-  $('#albumTitle').textContent=a.projectName;
+  $('#albumTitle').textContent=a.name;
   $('#albumMeta').textContent='Loading…';
   $('#cardGrid').innerHTML='<div class="skeleton" style="aspect-ratio:3/2"></div><div class="skeleton" style="aspect-ratio:3/2"></div>';
   window.scrollTo({top:0,behavior:'smooth'});
   try{
-    const d=await api('/api/gallery?jobId='+encodeURIComponent(a.jobId));
+    const d=await api('/api/album/'+encodeURIComponent(a.albumId));
     current.images=d.images||[];
-    $('#albumMeta').textContent=(d.job&&d.job.successCount!=null?d.job.successCount+' of '+d.job.totalItems+' ready':current.images.length+' images');
+    $('#albumMeta').textContent=(d.album?d.album.totalItems+' images':current.images.length+' images');
     const grid=$('#cardGrid'); grid.innerHTML='';
     current.images.forEach(img=>{ imgState[img.projectImageId]=img; grid.appendChild(buildCard(img)); });
     if(!current.images.length){ grid.innerHTML='<div class="empty"><h2>No images</h2></div>'; }
@@ -389,7 +390,7 @@ $('#backBtn').addEventListener('click',()=>{
   $('#albumView').classList.add('hidden'); $('#albumsView').classList.remove('hidden');
   window.scrollTo({top:0,behavior:'smooth'}); loadAlbums();
 });
-$('#renameBtn').addEventListener('click',()=>{ const a=ALBUMS.find(x=>x.projectId===current.projectId); if(a) renameAlbum(a); });
+$('#renameBtn').addEventListener('click',()=>{ const a=ALBUMS.find(x=>x.albumId===current.albumId); if(a) renameAlbum(a); });
 
 /* ── Image card ── */
 function activeIdx(img){
@@ -534,7 +535,7 @@ async function setVersion(card,img,versionId){
 /* ── Refresh one image from the server (after async tools) ── */
 async function refreshImage(projectImageId){
   try{
-    const d=await api('/api/gallery?jobId='+encodeURIComponent(current.jobId));
+    const d=await api('/api/album/'+encodeURIComponent(current.albumId));
     const fresh=(d.images||[]).find(i=>i.projectImageId===projectImageId);
     if(!fresh) return;
     imgState[projectImageId]=fresh;
@@ -555,9 +556,9 @@ async function refine(card,img,btn){
   const src=card.querySelector('[data-main]').src;
   btn.disabled=true; btn.textContent='Starting…';
   try{
-    await api('/api/refine',{method:'POST',body:{imageUrl:src,jobId:current.jobId,imageIndex:String(img.image_index),prompt}});
+    await api('/api/refine',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt}});
     btn.textContent='Refining…';
-    pollStatus('/api/refine-status',img.image_index,'refined_url',async()=>{
+    pollStatus('/api/refine-status',img.jobId,img.image_index,'refined_url',async()=>{
       ta.value=''; btn.disabled=false; btn.textContent='Refine';
       await refreshImage(img.projectImageId); toast('Refine saved as a new version');
     },()=>{ btn.disabled=false; btn.textContent='Refine'; });
@@ -569,21 +570,21 @@ async function upscale(card,img,btn){
   const src=card.querySelector('[data-main]').src;
   btn.disabled=true; btn.textContent='Starting…';
   try{
-    await api('/api/upscale',{method:'POST',body:{imageUrl:src,jobId:current.jobId,imageIndex:String(img.image_index),outputQuality:80}});
+    await api('/api/upscale',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),outputQuality:80}});
     btn.textContent='Upscaling…';
-    pollStatus('/api/upscale-status',img.image_index,'upscaled_url',async()=>{
+    pollStatus('/api/upscale-status',img.jobId,img.image_index,'upscaled_url',async()=>{
       btn.disabled=false; btn.textContent='⬆ Upscale to 4K';
       await refreshImage(img.projectImageId); toast('Upscaled to 4K');
     },()=>{ btn.disabled=false; btn.textContent='⬆ Upscale to 4K'; });
   }catch(e){ btn.disabled=false; btn.textContent='⬆ Upscale to 4K'; toast(e.message,true); }
 }
 
-function pollStatus(base,imageIndex,urlKey,onDone,onFail){
+function pollStatus(base,jobId,imageIndex,urlKey,onDone,onFail){
   let n=0; const max=90;
   const tick=async()=>{
     n++;
     try{
-      const d=await api(base+'?jobId='+encodeURIComponent(current.jobId)+'&imageIndex='+encodeURIComponent(String(imageIndex)));
+      const d=await api(base+'?jobId='+encodeURIComponent(jobId)+'&imageIndex='+encodeURIComponent(String(imageIndex)));
       if(d.status==='completed'&&d[urlKey]){ onDone(); return; }
       if(d.status==='failed'){ toast('Operation failed: '+(d.error_message||'unknown'),true); onFail&&onFail(); return; }
     }catch(e){}
