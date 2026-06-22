@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Studio — Your Albums</title>
+<style>
+  :root{
+    /* Ocean palette (cohesive with the marketing site) */
+    --bg:#06101A;
+    --bg-2:#081826;
+    --surface:rgba(255,255,255,.045);
+    --surface-2:rgba(255,255,255,.07);
+    --hairline:rgba(255,255,255,.09);
+    --hairline-strong:rgba(255,255,255,.16);
+    --aqua:#00C2C7;
+    --aqua-soft:rgba(0,194,199,.16);
+    --ocean:#0077A8;
+    --yellow:#F5C842;
+    --text:#EAF4F8;
+    --text-muted:#8AA6B6;
+    --text-dim:#4A6675;
+    --red:#E0625A;
+    --green:#2ABF7A;
+    /* Apple-grade craft */
+    --r-lg:24px; --r-md:16px; --r-sm:11px;
+    --ease:cubic-bezier(.22,.61,.36,1);
+    --shadow:0 12px 40px rgba(0,0,0,.45);
+    --shadow-hi:0 22px 60px rgba(0,0,0,.55);
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:var(--font);
+    color:var(--text);
+    background:
+      radial-gradient(1100px 700px at 78% -8%, rgba(0,119,168,.20), transparent 60%),
+      radial-gradient(900px 600px at 6% 4%, rgba(0,194,199,.10), transparent 55%),
+      var(--bg);
+    -webkit-font-smoothing:antialiased;
+    letter-spacing:-.01em;
+    min-height:100%;
+  }
+  img{display:block;max-width:100%}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  a{color:inherit;text-decoration:none}
+  :focus-visible{outline:2px solid var(--aqua);outline-offset:2px;border-radius:6px}
+
+  /* ── Top bar ── */
+  .topbar{
+    position:sticky;top:0;z-index:40;
+    display:flex;align-items:center;gap:16px;
+    padding:14px clamp(18px,4vw,40px);
+    background:rgba(6,16,26,.62);
+    backdrop-filter:blur(22px) saturate(160%);
+    -webkit-backdrop-filter:blur(22px) saturate(160%);
+    border-bottom:1px solid var(--hairline);
+  }
+  .brand{display:flex;align-items:center;gap:11px;font-weight:600;font-size:17px}
+  .brand .dot{width:11px;height:11px;border-radius:50%;
+    background:radial-gradient(circle at 30% 30%,var(--aqua),var(--ocean));
+    box-shadow:0 0 16px var(--aqua-soft)}
+  .brand small{color:var(--text-muted);font-weight:500}
+  .spacer{flex:1}
+  .credits{
+    display:flex;align-items:center;gap:7px;
+    padding:8px 14px;border-radius:999px;
+    background:var(--surface);border:1px solid var(--hairline);
+    font-size:13.5px;font-weight:600;
+  }
+  .credits b{color:var(--yellow)}
+  .ghost-btn{
+    padding:8px 15px;border-radius:999px;font-size:13.5px;font-weight:600;
+    background:var(--surface);border:1px solid var(--hairline);
+    transition:background .25s var(--ease),border-color .25s var(--ease);
+  }
+  .ghost-btn:hover{background:var(--surface-2);border-color:var(--hairline-strong)}
+
+  /* ── Layout shell ── */
+  .wrap{max-width:1320px;margin:0 auto;padding:clamp(22px,4vw,46px) clamp(18px,4vw,40px) 96px}
+  .page-head{display:flex;align-items:flex-end;gap:18px;margin-bottom:30px}
+  .page-head h1{font-size:clamp(26px,4vw,38px);font-weight:700;letter-spacing:-.03em}
+  .page-head p{color:var(--text-muted);font-size:15px;margin-top:6px}
+  .back{
+    display:inline-flex;align-items:center;gap:8px;margin-bottom:18px;
+    color:var(--text-muted);font-size:14.5px;font-weight:600;
+    transition:color .2s var(--ease),transform .2s var(--ease);
+  }
+  .back:hover{color:var(--text);transform:translateX(-2px)}
+
+  /* ── Album tiles ── */
+  .album-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(264px,1fr));gap:22px}
+  .tile{
+    position:relative;border-radius:var(--r-lg);overflow:hidden;
+    background:var(--surface);border:1px solid var(--hairline);
+    box-shadow:var(--shadow);
+    transition:transform .4s var(--ease),box-shadow .4s var(--ease),border-color .3s var(--ease);
+    cursor:pointer;
+  }
+  .tile:hover{transform:translateY(-6px);box-shadow:var(--shadow-hi);border-color:var(--hairline-strong)}
+  .tile-cover{aspect-ratio:16/10;background:var(--bg-2);overflow:hidden;position:relative}
+  .tile-cover img{width:100%;height:100%;object-fit:cover;transition:transform .6s var(--ease)}
+  .tile:hover .tile-cover img{transform:scale(1.045)}
+  .tile-cover.empty{display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:13px}
+  .tile-scrim{position:absolute;inset:0;background:linear-gradient(to top,rgba(6,16,26,.86) 4%,transparent 46%)}
+  .tile-body{position:absolute;left:0;right:0;bottom:0;padding:15px 16px;display:flex;align-items:flex-end;gap:10px}
+  .tile-body .meta{flex:1;min-width:0}
+  .tile-body h3{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile-body .sub{color:var(--text-muted);font-size:12.5px;margin-top:3px}
+  .tile-rename{
+    opacity:0;flex:0 0 auto;width:32px;height:32px;border-radius:10px;
+    background:rgba(6,16,26,.5);border:1px solid var(--hairline);
+    display:grid;place-items:center;transition:opacity .25s var(--ease),background .2s var(--ease);
+  }
+  .tile:hover .tile-rename{opacity:1}
+  .tile-rename:hover{background:rgba(6,16,26,.8)}
+  .status-dot{position:absolute;top:13px;left:13px;display:flex;align-items:center;gap:6px;
+    padding:5px 10px;border-radius:999px;background:rgba(6,16,26,.55);
+    backdrop-filter:blur(8px);font-size:11.5px;font-weight:600;color:var(--text-muted)}
+  .status-dot i{width:7px;height:7px;border-radius:50%;background:var(--text-dim)}
+  .status-dot.done i{background:var(--green);box-shadow:0 0 9px rgba(42,191,122,.7)}
+  .status-dot.proc i{background:var(--yellow);box-shadow:0 0 9px rgba(245,200,66,.7)}
+
+  /* ── Image cards (album detail) ── */
+  .card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:24px}
+  .card{
+    border-radius:var(--r-lg);overflow:hidden;
+    background:var(--surface);border:1px solid var(--hairline);box-shadow:var(--shadow);
+    display:flex;flex-direction:column;
+  }
+  .stage{position:relative;background:var(--bg-2);aspect-ratio:3/2;overflow:hidden}
+  .stage>img{width:100%;height:100%;object-fit:cover}
+  .badge{position:absolute;top:12px;right:12px;padding:5px 11px;border-radius:999px;
+    font-size:11.5px;font-weight:700;letter-spacing:.02em;
+    background:rgba(6,16,26,.55);backdrop-filter:blur(8px);border:1px solid var(--hairline)}
+  .badge.k4{color:var(--yellow);border-color:rgba(245,200,66,.4)}
+  .expand{position:absolute;top:12px;left:12px;width:34px;height:34px;border-radius:10px;
+    background:rgba(6,16,26,.5);backdrop-filter:blur(8px);border:1px solid var(--hairline);
+    display:grid;place-items:center;opacity:0;transition:opacity .25s var(--ease)}
+  .stage:hover .expand{opacity:1}
+
+  /* compare slider */
+  .compare{position:relative;width:100%;height:100%;user-select:none}
+  .compare img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .compare .top{clip-path:inset(0 calc(100% - var(--pct,50%)) 0 0)}
+  .cmp-divider{position:absolute;top:0;bottom:0;left:var(--pct,50%);width:2px;
+    background:rgba(255,255,255,.85);transform:translateX(-1px);box-shadow:0 0 12px rgba(0,0,0,.5)}
+  .cmp-handle{position:absolute;top:50%;left:var(--pct,50%);transform:translate(-50%,-50%);
+    width:38px;height:38px;border-radius:50%;background:rgba(6,16,26,.7);backdrop-filter:blur(6px);
+    border:1.5px solid rgba(255,255,255,.85);display:grid;place-items:center;font-size:13px;color:#fff;pointer-events:none}
+  .cmp-range{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:ew-resize;margin:0}
+  .cmp-tag{position:absolute;bottom:12px;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;
+    background:rgba(6,16,26,.6);backdrop-filter:blur(6px);letter-spacing:.04em}
+  .cmp-tag.l{left:12px;color:var(--text)} .cmp-tag.r{right:12px;color:var(--aqua)}
+
+  .card-body{padding:15px 16px 17px;display:flex;flex-direction:column;gap:13px}
+  .card-title-row{display:flex;align-items:center;gap:10px}
+  .card-title-row h4{font-size:15px;font-weight:600;flex:1}
+  .pick-row{display:flex;gap:9px}
+  .pick-row button{
+    flex:1;padding:10px;border-radius:var(--r-sm);font-size:13px;font-weight:600;
+    background:var(--surface-2);border:1px solid var(--hairline);transition:.2s var(--ease);
+  }
+  .pick-row button:hover{border-color:var(--aqua);color:var(--aqua)}
+  .pick-row button.active{background:var(--aqua);color:#04222b;border-color:transparent}
+  .pick-row button[disabled]{opacity:.4;cursor:not-allowed}
+
+  .tool{display:flex;gap:9px;align-items:stretch}
+  .refine-in{
+    flex:1;resize:none;border-radius:var(--r-sm);padding:10px 12px;font-size:13px;line-height:1.45;
+    background:var(--bg-2);border:1px solid var(--hairline);color:var(--text);font-family:inherit;
+    transition:border-color .2s var(--ease);
+  }
+  .refine-in:focus{outline:none;border-color:var(--aqua)}
+  .refine-in::placeholder{color:var(--text-dim)}
+  .btn{
+    border-radius:var(--r-sm);font-size:13px;font-weight:600;padding:10px 14px;white-space:nowrap;
+    border:1px solid var(--hairline);background:var(--surface-2);transition:.2s var(--ease);
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  }
+  .btn:hover:not([disabled]){border-color:var(--hairline-strong);background:rgba(255,255,255,.1)}
+  .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .btn.primary{background:var(--aqua);color:#04222b;border-color:transparent}
+  .btn.primary:hover:not([disabled]){filter:brightness(1.08)}
+  .btn-row{display:flex;gap:9px;flex-wrap:wrap}
+  .btn.icon{padding:10px 12px}
+  .btn.wide{flex:1}
+
+  .history{display:flex;align-items:center;gap:9px}
+  .hist-nav{display:flex;gap:6px}
+  .hist-strip{display:flex;gap:7px;overflow-x:auto;padding:2px 0;flex:1;scrollbar-width:none}
+  .hist-strip::-webkit-scrollbar{display:none}
+  .hist-thumb{flex:0 0 auto;width:44px;height:44px;border-radius:9px;overflow:hidden;
+    border:2px solid transparent;opacity:.6;transition:.2s var(--ease);position:relative}
+  .hist-thumb img{width:100%;height:100%;object-fit:cover}
+  .hist-thumb:hover{opacity:1}
+  .hist-thumb.active{opacity:1;border-color:var(--aqua)}
+  .hist-thumb span{position:absolute;bottom:0;right:0;font-size:8.5px;font-weight:700;
+    padding:1px 3px;background:rgba(6,16,26,.75);border-top-left-radius:5px;color:var(--text-muted)}
+  .divider{height:1px;background:var(--hairline);margin:1px 0}
+  .muted{color:var(--text-muted);font-size:12.5px}
+
+  /* animate row */
+  .anim{display:flex;gap:9px}
+  .anim input{flex:1;border-radius:var(--r-sm);padding:10px 12px;font-size:13px;
+    background:var(--bg-2);border:1px solid var(--hairline);color:var(--text)}
+  .anim input:focus{outline:none;border-color:var(--aqua)}
+  .anim input::placeholder{color:var(--text-dim)}
+
+  /* empty / loading */
+  .empty{text-align:center;padding:80px 20px;color:var(--text-muted)}
+  .empty h2{color:var(--text);font-size:21px;font-weight:600;margin-bottom:8px}
+  .empty a{color:var(--aqua);font-weight:600}
+  .skeleton{border-radius:var(--r-lg);background:linear-gradient(100deg,var(--surface) 30%,var(--surface-2) 50%,var(--surface) 70%);
+    background-size:200% 100%;animation:sk 1.4s infinite linear;aspect-ratio:16/10}
+  @keyframes sk{to{background-position:-200% 0}}
+
+  /* lightbox */
+  .lightbox{position:fixed;inset:0;z-index:60;background:rgba(3,9,15,.92);
+    backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:30px}
+  .lightbox.open{display:flex}
+  .lightbox img{max-width:94vw;max-height:90vh;border-radius:14px;box-shadow:var(--shadow-hi)}
+
+  /* toast */
+  .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);
+    z-index:70;padding:12px 20px;border-radius:14px;font-size:14px;font-weight:600;
+    background:rgba(10,24,38,.92);backdrop-filter:blur(14px);border:1px solid var(--hairline-strong);
+    box-shadow:var(--shadow-hi);opacity:0;pointer-events:none;transition:.3s var(--ease)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast.err{border-color:rgba(224,98,90,.5)}
+
+  .hidden{display:none!important}
+
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.001ms!important;transition-duration:.001ms!important}
+  }
+  @media (max-width:520px){
+    .card-grid,.album-grid{grid-template-columns:1fr}
+    .page-head{flex-direction:column;align-items:flex-start;gap:4px}
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="dot"></span>Studio<small>&nbsp;/ Albums</small></a>
+    <span class="spacer"></span>
+    <span class="credits">⚡ <b id="creditCount">—</b> credits</span>
+    <a class="ghost-btn" href="/">＋ New design</a>
+    <button class="ghost-btn" id="signOut">Sign out</button>
+  </header>
+
+  <main class="wrap">
+    <!-- Albums view -->
+    <section id="albumsView">
+      <div class="page-head">
+        <div>
+          <h1>Your Albums</h1>
+          <p>Every enhancement batch, saved with its full edit history.</p>
+        </div>
+      </div>
+      <div id="albumGrid" class="album-grid">
+        <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+      </div>
+    </section>
+
+    <!-- Album detail view -->
+    <section id="albumView" class="hidden">
+      <a class="back" id="backBtn">‹ All albums</a>
+      <div class="page-head">
+        <div>
+          <h1 id="albumTitle">Album</h1>
+          <p id="albumMeta"></p>
+        </div>
+        <button class="ghost-btn" id="renameBtn">Rename</button>
+      </div>
+      <div id="cardGrid" class="card-grid"></div>
+    </section>
+  </main>
+
+  <div class="lightbox" id="lightbox"><img id="lightboxImg" alt=""></div>
+  <div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const TOKEN = localStorage.getItem('authToken');
+if (!TOKEN) location.replace('/');
+
+const $ = (s,r=document)=>r.querySelector(s);
+const el=(tag,cls)=>{const e=document.createElement(tag);if(cls)e.className=cls;return e;};
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+let toastTimer;
+function toast(msg,isErr){
+  const t=$('#toast'); t.textContent=msg; t.classList.toggle('err',!!isErr); t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3200);
+}
+
+async function api(path,opts){
+  opts=opts||{};
+  const headers=Object.assign({'Authorization':'Bearer '+TOKEN},opts.headers||{});
+  if(opts.body && !headers['Content-Type']) headers['Content-Type']='application/json';
+  const res=await fetch(path,{method:opts.method||'GET',headers,body:opts.body?JSON.stringify(opts.body):undefined});
+  if(res.status===401){location.replace('/');throw new Error('unauthorized');}
+  let data=null; try{data=await res.json();}catch(e){}
+  if(!res.ok) throw new Error((data&&data.error)||('Request failed ('+res.status+')'));
+  return data;
+}
+
+/* ── State ── */
+let ALBUMS=[];
+let current={jobId:null,projectId:null,name:'',images:[]};
+const imgState={}; // projectImageId -> image object
+
+/* ── Credits ── */
+async function loadCredits(){
+  try{const d=await api('/api/credits'); $('#creditCount').textContent=(d.balance!=null?d.balance:(d.credits!=null?d.credits:'—'));}
+  catch(e){}
+}
+
+/* ── Albums ── */
+async function loadAlbums(){
+  const grid=$('#albumGrid');
+  try{
+    const d=await api('/api/projects');
+    ALBUMS=d.projects||[];
+    if(!ALBUMS.length){
+      grid.innerHTML='';
+      const e=el('div','empty');
+      e.innerHTML='<h2>No albums yet</h2><p>Enhance your first design and it’ll appear here.</p><p style="margin-top:14px"><a href="/">Start a new design ›</a></p>';
+      grid.appendChild(e); return;
+    }
+    grid.innerHTML='';
+    ALBUMS.forEach(a=>grid.appendChild(albumTile(a)));
+  }catch(e){ grid.innerHTML=''; const x=el('div','empty'); x.innerHTML='<h2>Couldn’t load albums</h2><p>'+esc(e.message)+'</p>'; grid.appendChild(x); }
+}
+
+function fmtDate(s){ if(!s)return''; try{return new Date(s).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});}catch(e){return'';} }
+
+function albumTile(a){
+  const t=el('div','tile');
+  const done=(a.status==='completed');
+  t.innerHTML=
+    '<div class="status-dot '+(done?'done':'proc')+'"><i></i>'+(done?'Ready':'Processing')+'</div>'+
+    (a.coverUrl
+      ? '<div class="tile-cover"><img loading="lazy" src="'+esc(a.coverUrl)+'" alt=""></div>'
+      : '<div class="tile-cover empty">No preview</div>')+
+    '<div class="tile-scrim"></div>'+
+    '<div class="tile-body"><div class="meta">'+
+      '<h3>'+esc(a.projectName)+'</h3>'+
+      '<div class="sub">'+a.imageCount+' image'+(a.imageCount===1?'':'s')+' · '+fmtDate(a.createdAt)+'</div>'+
+    '</div>'+
+    '<button class="tile-rename" title="Rename" aria-label="Rename album">✎</button></div>';
+  t.querySelector('.tile-rename').addEventListener('click',ev=>{ev.stopPropagation();renameAlbum(a);});
+  t.addEventListener('click',()=>openAlbum(a));
+  return t;
+}
+
+async function renameAlbum(a){
+  const name=prompt('Rename album',a.projectName);
+  if(name==null||!name.trim()||name.trim()===a.projectName) return;
+  try{
+    await api('/api/project/'+a.projectId,{method:'PATCH',body:{projectName:name.trim()}});
+    a.projectName=name.trim();
+    if(current.projectId===a.projectId){ current.name=a.projectName; $('#albumTitle').textContent=a.projectName; }
+    loadAlbums(); toast('Album renamed');
+  }catch(e){ toast(e.message,true); }
+}
+
+/* ── Album detail ── */
+async function openAlbum(a){
+  current={jobId:a.jobId,projectId:a.projectId,name:a.projectName,images:[]};
+  $('#albumsView').classList.add('hidden');
+  $('#albumView').classList.remove('hidden');
+  $('#albumTitle').textContent=a.projectName;
+  $('#albumMeta').textContent='Loading…';
+  $('#cardGrid').innerHTML='<div class="skeleton" style="aspect-ratio:3/2"></div><div class="skeleton" style="aspect-ratio:3/2"></div>';
+  window.scrollTo({top:0,behavior:'smooth'});
+  try{
+    const d=await api('/api/gallery?jobId='+encodeURIComponent(a.jobId));
+    current.images=d.images||[];
+    $('#albumMeta').textContent=(d.job&&d.job.successCount!=null?d.job.successCount+' of '+d.job.totalItems+' ready':current.images.length+' images');
+    const grid=$('#cardGrid'); grid.innerHTML='';
+    current.images.forEach(img=>{ imgState[img.projectImageId]=img; grid.appendChild(buildCard(img)); });
+    if(!current.images.length){ grid.innerHTML='<div class="empty"><h2>No images</h2></div>'; }
+  }catch(e){ $('#cardGrid').innerHTML='<div class="empty"><h2>Couldn’t load album</h2><p>'+esc(e.message)+'</p></div>'; }
+}
+$('#backBtn').addEventListener('click',()=>{
+  $('#albumView').classList.add('hidden'); $('#albumsView').classList.remove('hidden');
+  window.scrollTo({top:0,behavior:'smooth'}); loadAlbums();
+});
+$('#renameBtn').addEventListener('click',()=>{ const a=ALBUMS.find(x=>x.projectId===current.projectId); if(a) renameAlbum(a); });
+
+/* ── Image card ── */
+function activeIdx(img){
+  if(!img.versions||!img.versions.length) return -1;
+  return img.versions.findIndex(v=>v.id===img.active_version_id);
+}
+function buildCard(img){
+  const card=el('div','card'); card.dataset.id=img.projectImageId;
+  const cur=img.current_url||img.enhanced_url||'';
+  const idx=parseInt(img.image_index,10); const num=isNaN(idx)?'':(idx+1);
+  const hasHealed=!!img.healed_url, hasEnh=!!img.enhanced_url;
+  const badge=(img.resolution_badge==='4K')?'<span class="badge k4">4K</span>':(img.resolution_badge?'<span class="badge">'+esc(img.resolution_badge)+'</span>':'');
+
+  card.innerHTML=
+    '<div class="stage" data-stage>'+
+      '<img data-main src="'+esc(cur)+'" alt="Design '+num+'">'+
+      badge+
+      '<button class="expand" title="View full" aria-label="View full size">⤢</button>'+
+    '</div>'+
+    '<div class="card-body">'+
+      '<div class="card-title-row"><h4>Design '+num+'</h4>'+
+        '<button class="btn icon" data-compare '+((hasHealed&&hasEnh)?'':'disabled title="No alternate to compare"')+'>⇋ Compare</button></div>'+
+      '<div class="pick-row hidden" data-pick>'+
+        '<button data-choice="enhanced">Use Enhanced</button>'+
+        '<button data-choice="healed">Use Healed</button>'+
+      '</div>'+
+      '<div class="divider"></div>'+
+      '<div class="tool">'+
+        '<textarea class="refine-in" rows="2" placeholder="Describe a refinement — e.g. warmer patio lighting, more turquoise water"></textarea>'+
+        '<button class="btn primary" data-refine>Refine</button>'+
+      '</div>'+
+      '<div class="history" data-history></div>'+
+      '<div class="btn-row">'+
+        '<button class="btn wide" data-upscale>⬆ Upscale to 4K</button>'+
+        '<button class="btn" data-download>⬇ Download</button>'+
+        '<button class="btn icon" data-pin title="Share to Pinterest">📌</button>'+
+        '<button class="btn icon" data-fb title="Share to Facebook">f</button>'+
+      '</div>'+
+      '<div class="anim">'+
+        '<input type="email" placeholder="Email for 5s animation…">'+
+        '<button class="btn" data-animate>🎬 Animate</button>'+
+      '</div>'+
+    '</div>';
+
+  // wire
+  const stage=card.querySelector('[data-stage]');
+  card.querySelector('.expand').addEventListener('click',()=>openLightbox(card.querySelector('[data-main]').src));
+  card.querySelector('[data-compare]').addEventListener('click',()=>toggleCompare(card,img));
+  card.querySelectorAll('[data-pick] button').forEach(b=>b.addEventListener('click',()=>pick(card,img,b.dataset.choice)));
+  card.querySelector('[data-refine]').addEventListener('click',e=>refine(card,img,e.currentTarget));
+  card.querySelector('[data-upscale]').addEventListener('click',e=>upscale(card,img,e.currentTarget));
+  card.querySelector('[data-download]').addEventListener('click',()=>download(card.querySelector('[data-main]').src,'design-'+num+'.jpg'));
+  card.querySelector('[data-pin]').addEventListener('click',()=>window.open('https://pinterest.com/pin/create/button/?media='+encodeURIComponent(card.querySelector('[data-main]').src),'_blank'));
+  card.querySelector('[data-fb]').addEventListener('click',()=>window.open('https://www.facebook.com/sharer/sharer.php?u='+encodeURIComponent(card.querySelector('[data-main]').src),'_blank'));
+  card.querySelector('[data-animate]').addEventListener('click',e=>animate(card,img,e.currentTarget));
+
+  renderHistory(card,img);
+  return card;
+}
+
+/* ── Compare slider ── */
+function toggleCompare(card,img){
+  const stage=card.querySelector('[data-stage]');
+  const pick=card.querySelector('[data-pick]');
+  if(stage.querySelector('.compare')){ closeCompare(card,img); pick.classList.add('hidden'); return; }
+  pick.classList.remove('hidden');
+  highlightPick(card,img);
+  const cmp=el('div','compare'); cmp.style.setProperty('--pct','50%');
+  cmp.innerHTML=
+    '<img class="base" src="'+esc(img.enhanced_url)+'" alt="Enhanced">'+
+    '<img class="top" src="'+esc(img.healed_url)+'" alt="Healed">'+
+    '<div class="cmp-divider"></div><div class="cmp-handle">⇋</div>'+
+    '<span class="cmp-tag l">Enhanced</span><span class="cmp-tag r">Healed</span>'+
+    '<input class="cmp-range" type="range" min="0" max="100" value="50" aria-label="Compare enhanced and healed">';
+  const main=stage.querySelector('[data-main]'); main.style.visibility='hidden';
+  stage.appendChild(cmp);
+  const range=cmp.querySelector('.cmp-range');
+  range.addEventListener('input',()=>cmp.style.setProperty('--pct',range.value+'%'));
+}
+function closeCompare(card){ const c=card.querySelector('.compare'); if(c)c.remove(); const m=card.querySelector('[data-main]'); if(m)m.style.visibility=''; }
+
+function highlightPick(card,img){
+  const idx=activeIdx(img);
+  const activeSource=(idx>=0&&img.versions[idx])?img.versions[idx].source:null;
+  card.querySelectorAll('[data-pick] button').forEach(b=>{
+    b.classList.toggle('active',b.dataset.choice===activeSource);
+    if(b.dataset.choice==='enhanced')b.disabled=!img.enhanced_url;
+    if(b.dataset.choice==='healed')b.disabled=!img.healed_url;
+  });
+}
+
+async function pick(card,img,choice){
+  try{
+    const d=await api('/api/select-image',{method:'POST',body:{projectImageId:img.projectImageId,choice}});
+    img.current_url=d.current_url; img.active_version_id=d.active_version_id;
+    await refreshImage(img.projectImageId);
+    closeCompare(card);
+    card.querySelector('[data-pick]').classList.add('hidden');
+    toast('Saved the '+choice+' version');
+  }catch(e){ toast(e.message,true); }
+}
+
+/* ── History strip + undo/redo ── */
+function renderHistory(card,img){
+  const h=card.querySelector('[data-history]'); h.innerHTML='';
+  const idx=activeIdx(img);
+  const nav=el('div','hist-nav');
+  const undo=el('button','btn icon'); undo.textContent='↩'; undo.title='Undo';
+  const redo=el('button','btn icon'); redo.textContent='↪'; redo.title='Redo';
+  undo.disabled=!(idx>0); redo.disabled=!(img.versions&&idx>=0&&idx<img.versions.length-1);
+  undo.addEventListener('click',()=>moveVersion(card,img,'undo'));
+  redo.addEventListener('click',()=>moveVersion(card,img,'redo'));
+  nav.appendChild(undo); nav.appendChild(redo); h.appendChild(nav);
+
+  const strip=el('div','hist-strip');
+  if(img.versions&&img.versions.length){
+    img.versions.forEach(v=>{
+      const th=el('button','hist-thumb'+(v.id===img.active_version_id?' active':''));
+      th.title=(v.source||'')+(v.prompt?' — '+v.prompt:'');
+      th.innerHTML='<img src="'+esc(v.url)+'" alt=""><span>v'+v.seq+'</span>';
+      th.addEventListener('click',()=>setVersion(card,img,v.id));
+      strip.appendChild(th);
+    });
+  }else{
+    const note=el('span','muted'); note.textContent='No saved versions yet — compare and pick, or refine to start the history.';
+    strip.appendChild(note);
+  }
+  h.appendChild(strip);
+}
+function applyCursor(card,img,d){
+  img.current_url=d.current_url; img.active_version_id=d.active_version_id;
+  card.querySelector('[data-main]').src=d.current_url;
+  renderHistory(card,img); highlightPick(card,img);
+}
+async function moveVersion(card,img,dir){
+  try{ const d=await api('/api/version/'+dir,{method:'POST',body:{projectImageId:img.projectImageId}}); applyCursor(card,img,d);}catch(e){toast(e.message,true);}
+}
+async function setVersion(card,img,versionId){
+  try{ const d=await api('/api/version/set',{method:'POST',body:{projectImageId:img.projectImageId,versionId}}); applyCursor(card,img,d);}catch(e){toast(e.message,true);}
+}
+
+/* ── Refresh one image from the server (after async tools) ── */
+async function refreshImage(projectImageId){
+  try{
+    const d=await api('/api/gallery?jobId='+encodeURIComponent(current.jobId));
+    const fresh=(d.images||[]).find(i=>i.projectImageId===projectImageId);
+    if(!fresh) return;
+    imgState[projectImageId]=fresh;
+    const card=$('#cardGrid').querySelector('.card[data-id="'+projectImageId+'"]');
+    if(!card) return;
+    card.querySelector('[data-main]').src=fresh.current_url||fresh.enhanced_url||'';
+    // badge
+    const stage=card.querySelector('[data-stage]'); let b=stage.querySelector('.badge'); if(b)b.remove();
+    if(fresh.resolution_badge){ const nb=el('span','badge'+(fresh.resolution_badge==='4K'?' k4':'')); nb.textContent=fresh.resolution_badge; stage.appendChild(nb); }
+    renderHistory(card,fresh); highlightPick(card,fresh);
+  }catch(e){}
+}
+
+/* ── Refine (async + poll) ── */
+async function refine(card,img,btn){
+  const ta=card.querySelector('.refine-in'); const prompt=ta.value.trim();
+  if(!prompt){ toast('Enter a refinement first',true); return; }
+  const src=card.querySelector('[data-main]').src;
+  btn.disabled=true; btn.textContent='Starting…';
+  try{
+    await api('/api/refine',{method:'POST',body:{imageUrl:src,jobId:current.jobId,imageIndex:String(img.image_index),prompt}});
+    btn.textContent='Refining…';
+    pollStatus('/api/refine-status',img.image_index,'refined_url',async()=>{
+      ta.value=''; btn.disabled=false; btn.textContent='Refine';
+      await refreshImage(img.projectImageId); toast('Refine saved as a new version');
+    },()=>{ btn.disabled=false; btn.textContent='Refine'; });
+  }catch(e){ btn.disabled=false; btn.textContent='Refine'; toast(e.message,true); }
+}
+
+/* ── Upscale (async + poll) ── */
+async function upscale(card,img,btn){
+  const src=card.querySelector('[data-main]').src;
+  btn.disabled=true; btn.textContent='Starting…';
+  try{
+    await api('/api/upscale',{method:'POST',body:{imageUrl:src,jobId:current.jobId,imageIndex:String(img.image_index),outputQuality:80}});
+    btn.textContent='Upscaling…';
+    pollStatus('/api/upscale-status',img.image_index,'upscaled_url',async()=>{
+      btn.disabled=false; btn.textContent='⬆ Upscale to 4K';
+      await refreshImage(img.projectImageId); toast('Upscaled to 4K');
+    },()=>{ btn.disabled=false; btn.textContent='⬆ Upscale to 4K'; });
+  }catch(e){ btn.disabled=false; btn.textContent='⬆ Upscale to 4K'; toast(e.message,true); }
+}
+
+function pollStatus(base,imageIndex,urlKey,onDone,onFail){
+  let n=0; const max=90;
+  const tick=async()=>{
+    n++;
+    try{
+      const d=await api(base+'?jobId='+encodeURIComponent(current.jobId)+'&imageIndex='+encodeURIComponent(String(imageIndex)));
+      if(d.status==='completed'&&d[urlKey]){ onDone(); return; }
+      if(d.status==='failed'){ toast('Operation failed: '+(d.error_message||'unknown'),true); onFail&&onFail(); return; }
+    }catch(e){}
+    if(n>=max){ toast('Still working — check back shortly',true); onFail&&onFail(); return; }
+    setTimeout(tick,2000);
+  };
+  setTimeout(tick,2000);
+}
+
+/* ── Animate ── */
+async function animate(card,img,btn){
+  const input=card.querySelector('.anim input'); const email=input.value.trim();
+  if(!email||email.indexOf('@')<0){ toast('Enter a valid email',true); return; }
+  const src=card.querySelector('[data-main]').src;
+  btn.disabled=true; btn.textContent='Sending…';
+  try{
+    await api('/api/animate',{method:'POST',body:{email,image:src,name:'design-'+((parseInt(img.image_index,10)||0)+1)+'.jpg'}});
+    btn.textContent='Sent'; toast('Animation is rendering — we’ll email it in 1–2 min');
+    loadCredits();
+  }catch(e){ btn.disabled=false; btn.textContent='🎬 Animate'; toast(e.message,true); }
+}
+
+/* ── Download (blob, to force save of cross-origin S3) ── */
+async function download(url,name){
+  try{
+    const r=await fetch(url); const b=await r.blob(); const u=URL.createObjectURL(b);
+    const a=el('a'); a.href=u; a.download=name||'image.jpg'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(u),1500);
+  }catch(e){ window.open(url,'_blank'); }
+}
+
+/* ── Lightbox ── */
+function openLightbox(src){ $('#lightboxImg').src=src; $('#lightbox').classList.add('open'); }
+$('#lightbox').addEventListener('click',()=>$('#lightbox').classList.remove('open'));
+document.addEventListener('keydown',e=>{ if(e.key==='Escape')$('#lightbox').classList.remove('open'); });
+
+$('#signOut').addEventListener('click',()=>{ localStorage.removeItem('authToken'); location.replace('/'); });
+
+/* ── Boot ── */
+loadCredits();
+loadAlbums();
+</script>
+</body>
+</html>
