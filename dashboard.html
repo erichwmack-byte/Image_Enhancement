@@ -223,6 +223,21 @@
   .lightbox.open{display:flex}
   .lightbox img{max-width:94vw;max-height:90vh;border-radius:14px;box-shadow:var(--shadow-hi)}
 
+  /* compare modal (pop-out) */
+  .cmp-modal{position:fixed;inset:0;z-index:65;background:rgba(3,9,15,.93);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    display:none;align-items:center;justify-content:center;padding:24px}
+  .cmp-modal.open{display:flex}
+  .cmp-modal-inner{width:min(1080px,95vw);display:flex;flex-direction:column;gap:16px}
+  .cmp-modal-head{display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:600;color:var(--text-muted)}
+  .cmp-close{width:36px;height:36px;border-radius:10px;background:var(--surface);border:1px solid var(--hairline);color:var(--text);font-size:15px}
+  .cmp-close:hover{background:var(--surface-2)}
+  .cmp-stage-wrap{position:relative;width:100%;aspect-ratio:3/2;max-height:72vh;border-radius:18px;overflow:hidden;background:var(--bg-2);box-shadow:var(--shadow-hi)}
+  .cmp-modal-actions{display:flex;gap:12px}
+  .cmp-modal-actions .btn{flex:1;padding:14px;font-size:14px}
+  .cmp-modal-actions .btn.active{background:var(--aqua);color:#04222b;border-color:transparent}
+  @media (max-width:560px){ .cmp-stage-wrap{aspect-ratio:1/1} .cmp-modal-actions{flex-direction:column} }
+
   /* toast */
   .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);
     z-index:70;padding:12px 20px;border-radius:14px;font-size:14px;font-weight:600;
@@ -280,6 +295,20 @@
   </main>
 
   <div class="lightbox" id="lightbox"><img id="lightboxImg" alt=""></div>
+
+  <div class="cmp-modal" id="cmpModal">
+    <div class="cmp-modal-inner">
+      <div class="cmp-modal-head">
+        <span>Compare &amp; choose — drag the divider</span>
+        <button class="cmp-close" id="cmpClose" aria-label="Close">✕</button>
+      </div>
+      <div class="cmp-stage-wrap"><div class="compare" id="cmpStage"></div></div>
+      <div class="cmp-modal-actions">
+        <button class="btn wide" id="cmpUseEnhanced">Use Enhanced</button>
+        <button class="btn wide" id="cmpUseHealed">Use Healed</button>
+      </div>
+    </div>
+  </div>
   <div class="toast" id="toast"></div>
 
 <script>
@@ -413,10 +442,6 @@ function buildCard(img){
     '<div class="card-body">'+
       '<div class="card-title-row"><h4>Design '+num+'</h4>'+
         '<button class="btn icon" data-compare '+((hasHealed&&hasEnh)?'':'disabled title="No alternate to compare"')+'>⇋ Compare</button></div>'+
-      '<div class="pick-row hidden" data-pick>'+
-        '<button data-choice="enhanced">Use Enhanced</button>'+
-        '<button data-choice="healed">Use Healed</button>'+
-      '</div>'+
       '<div class="divider"></div>'+
       '<div class="tool">'+
         '<textarea class="refine-in" rows="2" placeholder="Describe a refinement — e.g. warmer patio lighting, more turquoise water"></textarea>'+
@@ -438,8 +463,7 @@ function buildCard(img){
   // wire
   const stage=card.querySelector('[data-stage]');
   card.querySelector('.expand').addEventListener('click',()=>openLightbox(card.querySelector('[data-main]').src));
-  card.querySelector('[data-compare]').addEventListener('click',()=>toggleCompare(card,img));
-  card.querySelectorAll('[data-pick] button').forEach(b=>b.addEventListener('click',()=>pick(card,img,b.dataset.choice)));
+  card.querySelector('[data-compare]').addEventListener('click',()=>openCompareModal(card,img));
   card.querySelector('[data-refine]').addEventListener('click',e=>refine(card,img,e.currentTarget));
   card.querySelector('[data-upscale]').addEventListener('click',e=>upscale(card,img,e.currentTarget));
   card.querySelector('[data-download]').addEventListener('click',()=>download(card.querySelector('[data-main]').src,'design-'+num+'.jpg'));
@@ -451,35 +475,41 @@ function buildCard(img){
   return card;
 }
 
-/* ── Compare slider ── */
-function toggleCompare(card,img){
-  const stage=card.querySelector('[data-stage]');
-  const pick=card.querySelector('[data-pick]');
-  if(stage.querySelector('.compare')){ closeCompare(card,img); pick.classList.add('hidden'); return; }
-  pick.classList.remove('hidden');
-  highlightPick(card,img);
-  const cmp=el('div','compare'); cmp.style.setProperty('--pct','50%');
-  cmp.innerHTML=
-    '<img class="base" src="'+esc(img.enhanced_url)+'" alt="Enhanced">'+
-    '<img class="top" src="'+esc(img.healed_url)+'" alt="Healed">'+
+/* ── Compare (pop-out modal) ── */
+let cmpCurrent = { card:null, img:null };
+function openCompareModal(card,img){
+  if(!img.enhanced_url || !img.healed_url) return;
+  cmpCurrent = { card:card, img:img };
+  const stage = $('#cmpStage');
+  stage.style.setProperty('--pct','50%');
+  // clip-path reveals the TOP image on the LEFT, BASE shows on the RIGHT.
+  // So: top = Enhanced (left, matches left tag), base = Healed (right, matches right tag).
+  stage.innerHTML =
+    '<img class="base" src="'+esc(img.healed_url)+'" alt="Healed result">'+
+    '<img class="top" src="'+esc(img.enhanced_url)+'" alt="Enhanced result">'+
     '<div class="cmp-divider"></div><div class="cmp-handle">⇋</div>'+
     '<span class="cmp-tag l">Enhanced</span><span class="cmp-tag r">Healed</span>'+
-    '<input class="cmp-range" type="range" min="0" max="100" value="50" aria-label="Compare enhanced and healed">';
-  const main=stage.querySelector('[data-main]'); main.style.visibility='hidden';
-  stage.appendChild(cmp);
-  const range=cmp.querySelector('.cmp-range');
-  range.addEventListener('input',()=>cmp.style.setProperty('--pct',range.value+'%'));
+    '<input class="cmp-range" type="range" min="0" max="100" value="50" aria-label="Drag to compare enhanced and healed">';
+  const range = stage.querySelector('.cmp-range');
+  range.addEventListener('input',()=>stage.style.setProperty('--pct',range.value+'%'));
+  const idx = activeIdx(img);
+  const activeSource = (idx>=0 && img.versions[idx]) ? img.versions[idx].source : null;
+  $('#cmpUseEnhanced').classList.toggle('active', activeSource==='enhanced');
+  $('#cmpUseHealed').classList.toggle('active', activeSource==='healed');
+  $('#cmpModal').classList.add('open');
 }
-function closeCompare(card){ const c=card.querySelector('.compare'); if(c)c.remove(); const m=card.querySelector('[data-main]'); if(m)m.style.visibility=''; }
+function closeCompareModal(){ $('#cmpModal').classList.remove('open'); $('#cmpStage').innerHTML=''; cmpCurrent={card:null,img:null}; }
+$('#cmpClose').addEventListener('click', closeCompareModal);
+$('#cmpModal').addEventListener('click', e=>{ if(e.target.id==='cmpModal') closeCompareModal(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && $('#cmpModal').classList.contains('open')) closeCompareModal(); });
+$('#cmpUseEnhanced').addEventListener('click', async ()=>{ if(cmpCurrent.card){ await pick(cmpCurrent.card,cmpCurrent.img,'enhanced'); closeCompareModal(); } });
+$('#cmpUseHealed').addEventListener('click', async ()=>{ if(cmpCurrent.card){ await pick(cmpCurrent.card,cmpCurrent.img,'healed'); closeCompareModal(); } });
 
+// retained as a safe no-op (in-card pick row was replaced by the modal)
 function highlightPick(card,img){
   const idx=activeIdx(img);
   const activeSource=(idx>=0&&img.versions[idx])?img.versions[idx].source:null;
-  card.querySelectorAll('[data-pick] button').forEach(b=>{
-    b.classList.toggle('active',b.dataset.choice===activeSource);
-    if(b.dataset.choice==='enhanced')b.disabled=!img.enhanced_url;
-    if(b.dataset.choice==='healed')b.disabled=!img.healed_url;
-  });
+  card.querySelectorAll('[data-pick] button').forEach(b=>b.classList.toggle('active',b.dataset.choice===activeSource));
 }
 
 async function pick(card,img,choice){
@@ -487,8 +517,6 @@ async function pick(card,img,choice){
     const d=await api('/api/select-image',{method:'POST',body:{projectImageId:img.projectImageId,choice}});
     img.current_url=d.current_url; img.active_version_id=d.active_version_id;
     await refreshImage(img.projectImageId);
-    closeCompare(card);
-    card.querySelector('[data-pick]').classList.add('hidden');
     toast('Saved the '+choice+' version');
   }catch(e){ toast(e.message,true); }
 }
