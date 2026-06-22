@@ -1,3 +1,4 @@
+
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
 
@@ -457,13 +458,15 @@ app.post('/api/upscale-callback', async (req, res) => {
       if (projectRow) {
         await supabase
           .from('project_images')
-          .update({
-            upscaled_url: upscaled_url,
-            current_url: upscaled_url,
-            resolution_badge: '4K'
-          })
+          .update({ upscaled_url: upscaled_url, resolution_badge: '4K' })
           .eq('project_id', projectRow.id)
           .eq('image_index', String(image_index));
+
+        // Record the upscale as a new version and make it the active/current image.
+        const img = await getProjectImageByJob(job_id, image_index);
+        if (img) {
+          await appendVersion(img.id, { url: upscaled_url, source: 'upscale' });
+        }
       }
     }
 
@@ -601,11 +604,17 @@ app.post('/api/refine-callback', async (req, res) => {
         .single();
 
       if (projectRow) {
-        await supabase
-          .from('project_images')
-          .update({ current_url: refined_url })
-          .eq('project_id', projectRow.id)
-          .eq('image_index', String(image_index));
+        // Record the refine as a new version and make it the active/current image.
+        const img = await getProjectImageByJob(job_id, image_index);
+        if (img) {
+          const { data: rj } = await supabase
+            .from('refine_jobs')
+            .select('prompt')
+            .eq('job_id', job_id)
+            .eq('image_index', String(image_index))
+            .maybeSingle();
+          await appendVersion(img.id, { url: refined_url, source: 'refine', prompt: rj && rj.prompt ? rj.prompt : null });
+        }
       }
     }
 
@@ -685,14 +694,11 @@ app.post('/api/project-image-update', async (req, res) => {
     const updateData = {};
     if (original_url) updateData.original_url = original_url;
     if (enhanced_url) updateData.enhanced_url = enhanced_url;
-    if (healed_url) {
-      updateData.healed_url = healed_url;
-      updateData.current_url = healed_url;
-    } else if (current_url) {
-      // Interim path (pre-Phase 2): explicit current_url sent directly,
-      // e.g. pointing at enhanced_url until auto-heal exists.
-      updateData.current_url = current_url;
-    }
+    // Phase 2 (non-destructive heal): storing healed_url no longer auto-promotes
+    // it to current_url. current_url changes only when explicitly sent (the
+    // enhanced default from the batch loop) or via the authed /api/select-image pick.
+    if (healed_url) updateData.healed_url = healed_url;
+    if (current_url) updateData.current_url = current_url;
     if (status) updateData.status = status;
     if (error_message) updateData.error_message = error_message;
 
@@ -730,6 +736,203 @@ app.get('/api/status', requireAuth, async (req, res) => {
     console.error('Status error:', error.response?.data || error.message);
     return res.status(500).json({ error: 'Status check failed' });
   }
+});
+
+// ── Versions / Gallery helpers (Phase 2/3) ───────────────────────────────────
+// Resolve the canonical project_images row from a (job_id, image_index) pair.
+async function getProjectImageByJob(job_id, image_index) {
+  const { data: projectRow } = await supabase
+    .from('projects').select('id').eq('job_id', job_id).single();
+  if (!projectRow) return null;
+  const { data: imgRow } = await supabase
+    .from('project_images').select('id, project_id')
+    .eq('project_id', projectRow.id)
+    .eq('image_index', String(image_index))
+    .single();
+  return imgRow || null;
+}
+
+// Load a project_images row and confirm the requesting user owns it (via projects.user_id).
+async function getOwnedProjectImage(userId, projectImageId) {
+  const { data, error } = await supabase
+    .from('project_images')
+    .select('id, project_id, enhanced_url, healed_url, current_url, active_version_id, projects!inner(user_id)')
+    .eq('id', projectImageId)
+    .single();
+  if (error || !data) return null;
+  if (!data.projects || data.projects.user_id !== userId) return null;
+  return data;
+}
+
+// Append a new version to an image's history and make it the active/current image.
+// The chain is append-only (lossless): undo/redo just move the active cursor.
+async function appendVersion(projectImageId, opts) {
+  const url = opts.url;
+  const source = opts.source;
+  const prompt = (opts && opts.prompt) ? opts.prompt : null;
+
+  const { data: last } = await supabase
+    .from('project_image_versions')
+    .select('seq')
+    .eq('project_image_id', projectImageId)
+    .order('seq', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextSeq = (last && last.seq ? last.seq : 0) + 1;
+
+  const { data: version, error: vErr } = await supabase
+    .from('project_image_versions')
+    .insert({ project_image_id: projectImageId, url: url, source: source, prompt: prompt, seq: nextSeq })
+    .select('id, url, source, prompt, seq, created_at')
+    .single();
+  if (vErr) throw new Error('Could not insert version: ' + vErr.message);
+
+  await supabase
+    .from('project_images')
+    .update({ active_version_id: version.id, current_url: url })
+    .eq('id', projectImageId);
+
+  return version;
+}
+
+// Move the active-version cursor backward (undo) or forward (redo) along the chain.
+async function moveVersion(userId, projectImageId, dir) {
+  const img = await getOwnedProjectImage(userId, projectImageId);
+  if (!img) return { code: 404, body: { error: 'Image not found' } };
+
+  const { data: versions } = await supabase
+    .from('project_image_versions')
+    .select('id, url, seq')
+    .eq('project_image_id', projectImageId)
+    .order('seq', { ascending: true });
+
+  if (!versions || versions.length === 0) {
+    return { code: 400, body: { error: 'No versions yet' } };
+  }
+
+  let idx = versions.findIndex(function (v) { return v.id === img.active_version_id; });
+  if (idx === -1) idx = versions.length - 1; // cursor unset -> treat latest as active
+  const targetIdx = dir === 'undo' ? idx - 1 : idx + 1;
+  if (targetIdx < 0 || targetIdx >= versions.length) {
+    return { code: 400, body: { error: dir === 'undo' ? 'Nothing to undo' : 'Nothing to redo' } };
+  }
+
+  const target = versions[targetIdx];
+  await supabase
+    .from('project_images')
+    .update({ active_version_id: target.id, current_url: target.url })
+    .eq('id', projectImageId);
+
+  return {
+    code: 200,
+    body: {
+      ok: true,
+      current_url: target.url,
+      active_version_id: target.id,
+      canUndo: targetIdx > 0,
+      canRedo: targetIdx < versions.length - 1
+    }
+  };
+}
+
+// ── Gallery: Supabase-backed data for one job (replaces the n8n Sheets gallery) ─
+app.get('/api/gallery', requireAuth, async (req, res) => {
+  const { jobId } = req.query;
+  if (!jobId || jobId === 'undefined') {
+    return res.status(400).json({ error: 'Missing or invalid jobId' });
+  }
+  try {
+    const { data: project, error: pErr } = await supabase
+      .from('projects')
+      .select('id, job_id, project_name, status, brief_text, logo_url')
+      .eq('job_id', jobId)
+      .eq('user_id', req.user.id)
+      .single();
+    if (pErr || !project) return res.status(404).json({ error: 'Project not found' });
+
+    const { data: images, error: iErr } = await supabase
+      .from('project_images')
+      .select('id, image_index, image_name, original_url, enhanced_url, healed_url, current_url, active_version_id, upscaled_url, resolution_badge, status')
+      .eq('project_id', project.id)
+      .order('image_index', { ascending: true });
+    if (iErr) return res.status(500).json({ error: 'Could not load images' });
+
+    const ids = (images || []).map(function (i) { return i.id; });
+    const versionsByImage = {};
+    if (ids.length) {
+      const { data: versions } = await supabase
+        .from('project_image_versions')
+        .select('id, project_image_id, url, source, prompt, seq, created_at')
+        .in('project_image_id', ids)
+        .order('seq', { ascending: true });
+      (versions || []).forEach(function (v) {
+        if (!versionsByImage[v.project_image_id]) versionsByImage[v.project_image_id] = [];
+        versionsByImage[v.project_image_id].push(v);
+      });
+    }
+
+    const completed = (images || []).filter(function (i) { return i.status === 'completed'; }).length;
+
+    return res.status(200).json({
+      job: {
+        jobId: project.job_id,
+        projectName: project.project_name,
+        status: project.status,
+        briefText: project.brief_text || '',
+        logoUrl: project.logo_url || null,
+        totalItems: (images || []).length,
+        successCount: completed
+      },
+      images: (images || []).map(function (i) {
+        return {
+          projectImageId: i.id,
+          image_index: i.image_index,
+          image_name: i.image_name,
+          original_url: i.original_url,
+          enhanced_url: i.enhanced_url,
+          healed_url: i.healed_url,
+          current_url: i.current_url || i.enhanced_url || null,
+          active_version_id: i.active_version_id,
+          upscaled_url: i.upscaled_url,
+          resolution_badge: i.resolution_badge,
+          status: i.status,
+          versions: versionsByImage[i.id] || []
+        };
+      })
+    });
+  } catch (e) {
+    console.error('Gallery error:', e.message);
+    return res.status(500).json({ error: 'Gallery load failed' });
+  }
+});
+
+// ── Pick: user chooses enhanced vs healed; seeds the version chain ────────────
+app.post('/api/select-image', requireAuth, async (req, res) => {
+  const { projectImageId, choice } = req.body;
+  if (!projectImageId || (choice !== 'enhanced' && choice !== 'healed')) {
+    return res.status(400).json({ error: 'Missing projectImageId or invalid choice' });
+  }
+  try {
+    const img = await getOwnedProjectImage(req.user.id, projectImageId);
+    if (!img) return res.status(404).json({ error: 'Image not found' });
+    const url = choice === 'healed' ? img.healed_url : img.enhanced_url;
+    if (!url) return res.status(400).json({ error: 'No ' + choice + ' image available' });
+    const version = await appendVersion(projectImageId, { url: url, source: choice });
+    return res.status(200).json({ ok: true, current_url: url, active_version_id: version.id, version: version });
+  } catch (e) {
+    console.error('select-image error:', e.message);
+    return res.status(500).json({ error: 'Select failed' });
+  }
+});
+
+// ── Undo / Redo: move the active-version cursor along the saved chain ─────────
+app.post('/api/version/undo', requireAuth, async (req, res) => {
+  const r = await moveVersion(req.user.id, req.body.projectImageId, 'undo');
+  return res.status(r.code).json(r.body);
+});
+app.post('/api/version/redo', requireAuth, async (req, res) => {
+  const r = await moveVersion(req.user.id, req.body.projectImageId, 'redo');
+  return res.status(r.code).json(r.body);
 });
 
 // ── Start Server ──────────────────────────────────────────────────────────────
