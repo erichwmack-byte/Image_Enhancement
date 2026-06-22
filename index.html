@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1414,6 +1415,17 @@
       </ul>
     </div>
     <div class="form-group">
+      <label>Album</label>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button type="button" id="albumTabNew" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--aqua);background:var(--aqua);color:#06101A;font-weight:600;cursor:pointer;font-family:inherit">New album</button>
+        <button type="button" id="albumTabExisting" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--text-dim);background:transparent;color:var(--text-muted);font-weight:600;cursor:pointer;font-family:inherit">Add to existing</button>
+      </div>
+      <input type="text" id="albumName" name="albumName" placeholder="Album name (e.g. Henderson Residence)">
+      <select id="albumId" name="albumId" disabled style="display:none">
+        <option value="">Select an album…</option>
+      </select>
+    </div>
+    <div class="form-group">
       <label for="back_plane">Back Plane Environment</label>
       <input type="text" id="back_plane" name="back_plane" placeholder="e.g. Sonoran Desert, Scottsdale Residential">
     </div>
@@ -1994,6 +2006,43 @@ form.addEventListener('submit', async (e) => {
     overlay.style.display = 'none';
   }
 });
+
+// ── Album picker (new album vs add-to-existing) ──
+(function(){
+  const tabNew=document.getElementById('albumTabNew');
+  const tabExisting=document.getElementById('albumTabExisting');
+  const nameInput=document.getElementById('albumName');
+  const idSelect=document.getElementById('albumId');
+  if(!tabNew||!tabExisting||!nameInput||!idSelect) return;
+  let loaded=false;
+  function setMode(isNew){
+    nameInput.style.display=isNew?'':'none'; nameInput.disabled=!isNew;
+    idSelect.style.display=isNew?'none':''; idSelect.disabled=isNew; idSelect.required=!isNew;
+    tabNew.style.background=isNew?'var(--aqua)':'transparent';
+    tabNew.style.color=isNew?'#06101A':'var(--text-muted)';
+    tabNew.style.borderColor=isNew?'var(--aqua)':'var(--text-dim)';
+    tabExisting.style.background=!isNew?'var(--aqua)':'transparent';
+    tabExisting.style.color=!isNew?'#06101A':'var(--text-muted)';
+    tabExisting.style.borderColor=!isNew?'var(--aqua)':'var(--text-dim)';
+  }
+  async function loadExisting(){
+    if(loaded||!authToken) return; loaded=true;
+    try{
+      const r=await fetch('/api/albums',{headers:{'Authorization':'Bearer '+authToken}});
+      if(!r.ok) return;
+      const d=await r.json(); const list=d.albums||[];
+      list.forEach(function(a){
+        const o=document.createElement('option');
+        o.value=a.albumId; o.textContent=a.name+' ('+a.imageCount+')';
+        idSelect.appendChild(o);
+      });
+      if(!list.length){ const o=idSelect.querySelector('option'); if(o) o.textContent='No albums yet — start a new one'; }
+    }catch(e){}
+  }
+  tabNew.addEventListener('click',function(){ setMode(true); });
+  tabExisting.addEventListener('click',function(){ loadExisting(); setMode(false); });
+  setMode(true);
+})();
 
 async function pollStatus(jobId) {
   const interval = setInterval(async () => {
