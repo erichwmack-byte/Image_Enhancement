@@ -935,6 +935,105 @@ app.post('/api/version/redo', requireAuth, async (req, res) => {
   return res.status(r.code).json(r.body);
 });
 
+// ── Dashboard: list a user's albums (projects) with cover + count ────────────
+app.get('/api/projects', requireAuth, async (req, res) => {
+  try {
+    const { data: projects, error } = await supabase
+      .from('projects')
+      .select('id, job_id, project_name, status, created_at')
+      .eq('user_id', req.user.id)
+      .order('created_at', { ascending: false });
+    if (error) return res.status(500).json({ error: 'Could not load projects' });
+
+    const result = [];
+    for (const p of (projects || [])) {
+      const { data: imgs } = await supabase
+        .from('project_images')
+        .select('current_url, enhanced_url, image_index')
+        .eq('project_id', p.id)
+        .order('image_index', { ascending: true });
+      const list = imgs || [];
+      const cover = list.find(function (i) { return i.current_url || i.enhanced_url; }) || {};
+      result.push({
+        projectId: p.id,
+        jobId: p.job_id,
+        projectName: p.project_name || 'Untitled Project',
+        status: p.status,
+        createdAt: p.created_at,
+        imageCount: list.length,
+        coverUrl: cover.current_url || cover.enhanced_url || null
+      });
+    }
+    return res.status(200).json({ projects: result });
+  } catch (e) {
+    console.error('projects error:', e.message);
+    return res.status(500).json({ error: 'Projects load failed' });
+  }
+});
+
+// ── Dashboard: rename an album ───────────────────────────────────────────────
+app.patch('/api/project/:id', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { projectName } = req.body;
+  if (!projectName || !projectName.trim()) {
+    return res.status(400).json({ error: 'Missing projectName' });
+  }
+  try {
+    const { data: proj } = await supabase
+      .from('projects').select('id, user_id').eq('id', id).single();
+    if (!proj || proj.user_id !== req.user.id) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    const { error } = await supabase
+      .from('projects')
+      .update({ project_name: projectName.trim(), updated_at: new Date() })
+      .eq('id', id);
+    if (error) return res.status(500).json({ error: 'Could not rename' });
+    return res.status(200).json({ ok: true, projectName: projectName.trim() });
+  } catch (e) {
+    console.error('rename error:', e.message);
+    return res.status(500).json({ error: 'Rename failed' });
+  }
+});
+
+// ── Versions: jump the cursor to any saved version (history strip clicks) ─────
+app.post('/api/version/set', requireAuth, async (req, res) => {
+  const { projectImageId, versionId } = req.body;
+  if (!projectImageId || !versionId) {
+    return res.status(400).json({ error: 'Missing projectImageId or versionId' });
+  }
+  try {
+    const img = await getOwnedProjectImage(req.user.id, projectImageId);
+    if (!img) return res.status(404).json({ error: 'Image not found' });
+    const { data: v } = await supabase
+      .from('project_image_versions')
+      .select('id, url, seq')
+      .eq('id', versionId)
+      .eq('project_image_id', projectImageId)
+      .single();
+    if (!v) return res.status(404).json({ error: 'Version not found' });
+
+    await supabase
+      .from('project_images')
+      .update({ active_version_id: v.id, current_url: v.url })
+      .eq('id', projectImageId);
+
+    const { data: all } = await supabase
+      .from('project_image_versions')
+      .select('seq')
+      .eq('project_image_id', projectImageId)
+      .order('seq', { ascending: true });
+    const idx = (all || []).findIndex(function (x) { return x.seq === v.seq; });
+    return res.status(200).json({
+      ok: true, current_url: v.url, active_version_id: v.id,
+      canUndo: idx > 0, canRedo: idx < (all || []).length - 1
+    });
+  } catch (e) {
+    console.error('version/set error:', e.message);
+    return res.status(500).json({ error: 'Set failed' });
+  }
+});
+
 // ── Start Server ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
