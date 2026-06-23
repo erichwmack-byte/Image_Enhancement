@@ -315,6 +315,7 @@ app.post('/api/enhance', requireAuth, upload.array('images'), async (req, res) =
       image_index: String(u.index),
       image_name: `Image ${u.index + 1}`,
       raw_upload_url: u.rawUploadUrl,
+      resolution_badge: '1K',
       status: 'processing'
     }));
 
@@ -471,24 +472,20 @@ app.post('/api/upscale-callback', async (req, res) => {
     // Phase 1 addition: also update the canonical project_images row so the
     // history gallery / badges always reflect the latest upscale state.
     if (upscaled_url) {
-      const { data: projectRow } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('job_id', job_id)
-        .single();
-
-      if (projectRow) {
+      // Resolve the ONE canonical project_images row for this (job_id, image_index)
+      // and scope every write to its primary key. Updating by `id` (rather than by
+      // project_id + image_index) guarantees a single row is ever touched — even if
+      // legacy/dirty rows within a batch happen to share an image_index, which was
+      // the only path that could turn every card in a batch to 4K.
+      const img = await getProjectImageByJob(job_id, image_index);
+      if (img) {
         await supabase
           .from('project_images')
           .update({ upscaled_url: upscaled_url, resolution_badge: '4K' })
-          .eq('project_id', projectRow.id)
-          .eq('image_index', String(image_index));
+          .eq('id', img.id);
 
         // Record the upscale as a new version and make it the active/current image.
-        const img = await getProjectImageByJob(job_id, image_index);
-        if (img) {
-          await appendVersion(img.id, { url: upscaled_url, source: 'upscale' });
-        }
+        await appendVersion(img.id, { url: upscaled_url, source: 'upscale' });
       }
     }
 
