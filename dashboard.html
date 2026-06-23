@@ -202,6 +202,14 @@
   .divider{height:1px;background:var(--hairline);margin:1px 0}
   .muted{color:var(--text-muted);font-size:12.5px}
 
+  /* async-heal "generating alternate" pill */
+  .heal-hint{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;
+    font-size:11px;font-weight:600;color:var(--text-muted);
+    padding:5px 10px;border-radius:999px;background:var(--surface);border:1px solid var(--hairline)}
+  .heal-hint::before{content:"";width:7px;height:7px;border-radius:50%;
+    background:var(--aqua);box-shadow:0 0 8px var(--aqua-soft);animation:heal-pulse 1.2s var(--ease) infinite}
+  @keyframes heal-pulse{0%,100%{opacity:.35}50%{opacity:1}}
+
   /* animate row */
   .anim{display:flex;gap:9px}
   .anim input{flex:1;border-radius:var(--r-sm);padding:10px 12px;font-size:13px;
@@ -411,7 +419,7 @@ async function openAlbum(a){
     current.images=d.images||[];
     $('#albumMeta').textContent=(d.album?d.album.totalItems+' images':current.images.length+' images');
     const grid=$('#cardGrid'); grid.innerHTML='';
-    current.images.forEach(img=>{ imgState[img.projectImageId]=img; grid.appendChild(buildCard(img)); });
+    current.images.forEach(img=>{ imgState[img.projectImageId]=img; const c=buildCard(img); grid.appendChild(c); startHealWatch(c,img); });
     if(!current.images.length){ grid.innerHTML='<div class="empty"><h2>No images</h2></div>'; }
   }catch(e){ $('#cardGrid').innerHTML='<div class="empty"><h2>Couldn’t load album</h2><p>'+esc(e.message)+'</p></div>'; }
 }
@@ -442,6 +450,7 @@ function buildCard(img){
     '</div>'+
     '<div class="card-body">'+
       '<div class="card-title-row"><h4>Design '+num+'</h4>'+
+        '<span class="heal-hint hidden" data-heal-hint>Generating alternate…</span>'+
         '<button class="btn icon" data-compare>⇋ Compare</button></div>'+
       '<div class="divider"></div>'+
       '<div class="tool">'+
@@ -642,6 +651,34 @@ function pollStatus(base,jobId,imageIndex,urlKey,onDone,onFail){
     setTimeout(tick,2000);
   };
   setTimeout(tick,2000);
+}
+
+/* ── Async auto-heal watch: show "Generating alternate…" while the Flash heal runs
+   in the background, then refresh so the Compare slider lights up. Quiet by design:
+   404 (no heal job — e.g. legacy images) or a fallback (no genuine alternate) just
+   hide the pill and leave Compare disabled. */
+async function startHealWatch(card,img){
+  const latest=imgState[img.projectImageId]||img;
+  if(latest.healed_url) return;                 // a real alternate already exists
+  const hint=card.querySelector('[data-heal-hint]');
+  let n=0; const max=120;
+  const tick=async()=>{
+    n++;
+    let d;
+    try{
+      d=await api('/api/heal-status?jobId='+encodeURIComponent(img.jobId)+'&imageIndex='+encodeURIComponent(String(img.image_index)));
+    }catch(e){ if(hint)hint.classList.add('hidden'); return; } // 404 / no job → stop quietly
+    if(d.status==='completed'){
+      if(hint)hint.classList.add('hidden');
+      if(d.healed_url && !d.heal_fallback){ await refreshImage(img.projectImageId); } // Compare enables via updateCompareState
+      return;
+    }
+    if(d.status==='failed'){ if(hint)hint.classList.add('hidden'); return; }
+    if(hint)hint.classList.remove('hidden');     // still processing
+    if(n>=max){ if(hint)hint.classList.add('hidden'); return; }
+    setTimeout(tick,2500);
+  };
+  tick();
 }
 
 /* ── Animate ── */
