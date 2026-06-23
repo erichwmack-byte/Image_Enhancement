@@ -17,6 +17,11 @@ const upload = multer();
 const N8N_BASE_URL = 'https://courteous-solace-production-413f.up.railway.app';
 const CALLBACK_SECRET = 'sf_upscale_callback_2024';
 
+// Async Auto-Heal: when an enhanced result lands, fire the Gemini Flash alternate
+// as its own background job (heal_jobs + the standalone "Heal Image" workflow)
+// instead of running it inline in the Batch loop. Flip to false to disable heal.
+const HEAL_ENABLED = true;
+
 const S3_BUCKET = 'imageenhancement-production-storage';
 const S3_REGION = process.env.AWS_REGION || 'us-east-2';
 
@@ -681,6 +686,84 @@ app.get('/api/refine-status', requireAuth, async (req, res) => {
   }
 });
 
+// ── Heal: Callback from the standalone "Heal Image" workflow ─────────────────
+app.post('/api/heal-callback', async (req, res) => {
+  const secret = req.headers['x-callback-secret'];
+  if (secret !== CALLBACK_SECRET) {
+    return res.status(403).json({ error: 'Invalid callback secret' });
+  }
+
+  const { job_id, image_index, status, healed_url, heal_fallback, error_message } = req.body;
+  if (!job_id || image_index === undefined) {
+    return res.status(400).json({ error: 'Missing job_id or image_index' });
+  }
+
+  try {
+    const updateData = { status: status || 'completed', completed_at: new Date() };
+    if (healed_url) updateData.healed_url = healed_url;
+    if (heal_fallback !== undefined) updateData.heal_fallback = !!heal_fallback;
+    if (error_message) updateData.error_message = error_message;
+
+    await supabase
+      .from('heal_jobs')
+      .update(updateData)
+      .eq('job_id', job_id)
+      .eq('image_index', String(image_index));
+
+    // Store the alternate on the canonical image row — ONLY when a real healed image
+    // exists. On fallback the workflow reused the enhanced image, so there is no genuine
+    // alternate to compare; we leave healed_url null and Compare stays disabled.
+    // Non-destructive: never touches current_url or the version chain (the user opts in
+    // to healed via the Compare slider → /api/select-image). Scoped to one row by id.
+    if (healed_url && !heal_fallback) {
+      const img = await getProjectImageByJob(job_id, image_index);
+      if (img) {
+        await supabase
+          .from('project_images')
+          .update({ healed_url: healed_url })
+          .eq('id', img.id);
+      }
+    }
+
+    console.log(`Heal completed: ${job_id} image ${image_index}${heal_fallback ? ' (fallback)' : ''}`);
+    return res.status(200).json({ received: true });
+  } catch (error) {
+    console.error('Heal callback error:', error.message);
+    return res.status(500).json({ error: 'Callback processing failed' });
+  }
+});
+
+// ── Heal: Status Check (dashboard polls until the alternate is ready) ────────
+app.get('/api/heal-status', requireAuth, async (req, res) => {
+  const { jobId, imageIndex } = req.query;
+  if (!jobId || !imageIndex) {
+    return res.status(400).json({ error: 'Missing jobId or imageIndex' });
+  }
+  try {
+    const { data, error } = await supabase
+      .from('heal_jobs')
+      .select('status, healed_url, heal_fallback, error_message')
+      .eq('job_id', jobId)
+      .eq('image_index', String(imageIndex))
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error || !data) return res.status(404).json({ error: 'Job not found' });
+
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({
+      status: data.status,
+      healed_url: data.healed_url || null,
+      heal_fallback: !!data.heal_fallback,
+      error_message: data.error_message || null
+    });
+  } catch (error) {
+    console.error('Heal status check error:', error.message);
+    return res.status(500).json({ error: 'Status check failed' });
+  }
+});
+
 // ── Project: Enhancement Job Completion Callback from n8n ───────────────────
 // Phase 2 will extend this further (healed_url etc). For Phase 1, n8n's
 // Job Completed step is unchanged (still writes to Sheets); this route is
@@ -732,6 +815,14 @@ app.post('/api/project-image-update', async (req, res) => {
       return res.status(500).json({ error: 'Could not update project image' });
     }
 
+    // Async Auto-Heal: the moment the ENHANCED result is written back, kick off the
+    // Gemini Flash alternate in the background (its own job + workflow). Fire-and-forget
+    // so the enhance writeback returns immediately — this is what halves batch time.
+    if (enhanced_url) {
+      enqueueHeal(job_id, image_index, enhanced_url)
+        .catch(e => console.error('enqueueHeal error:', e.message));
+    }
+
     return res.status(200).json({ received: true });
 
   } catch (error) {
@@ -781,6 +872,61 @@ async function getOwnedProjectImage(userId, projectImageId) {
   if (error || !data) return null;
   if (!data.projects || data.projects.user_id !== userId) return null;
   return data;
+}
+
+// Async Auto-Heal enqueue: called from the enhanced-stage writeback. Resolves the
+// canonical image (for its cropped ground-truth original_url + owner), records a
+// heal_jobs row, and fires the standalone "Heal Image" workflow. Idempotent and
+// non-blocking — guarded so retries / re-imports never double-fire a heal.
+async function enqueueHeal(job_id, image_index, enhancedUrl) {
+  if (!HEAL_ENABLED) return;
+
+  const { data: projectRow } = await supabase
+    .from('projects').select('id, user_id').eq('job_id', job_id).single();
+  if (!projectRow) return;
+
+  const { data: imgRow } = await supabase
+    .from('project_images')
+    .select('id, original_url, healed_url')
+    .eq('project_id', projectRow.id)
+    .eq('image_index', String(image_index))
+    .single();
+  if (!imgRow) return;
+  if (imgRow.healed_url) return;        // a real alternate already exists
+  if (!imgRow.original_url) return;     // no ground-truth (IMAGE_A) to audit against yet
+
+  // Don't enqueue twice for the same image.
+  const { data: existing } = await supabase
+    .from('heal_jobs').select('id')
+    .eq('job_id', job_id).eq('image_index', String(image_index))
+    .maybeSingle();
+  if (existing) return;
+
+  const { error: insErr } = await supabase
+    .from('heal_jobs')
+    .insert({
+      job_id,
+      image_index: String(image_index),
+      user_id: projectRow.user_id,
+      source_url: enhancedUrl,
+      original_url: imgRow.original_url,
+      status: 'processing'
+    });
+  if (insErr) { console.error('heal_jobs insert error:', insErr.message); return; }
+
+  // Fire the heal workflow (fire-and-forget — the alternate lands via /api/heal-callback).
+  const n8nUrl = `${N8N_BASE_URL}/webhook/heal_image`;
+  axios.post(n8nUrl, {
+    job_id,
+    image_index: String(image_index),
+    enhanced_url: enhancedUrl,
+    original_url: imgRow.original_url
+  }, {
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 120000
+  }).catch(err => {
+    console.error('n8n heal fire-and-forget error:', err.message);
+  });
 }
 
 // Append a new version to an image's history and make it the active/current image.
