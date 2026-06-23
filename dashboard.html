@@ -431,7 +431,8 @@ function buildCard(img){
   const cur=img.current_url||img.enhanced_url||'';
   const idx=parseInt(img.image_index,10); const num=isNaN(idx)?'':(idx+1);
   const hasHealed=!!img.healed_url, hasEnh=!!img.enhanced_url;
-  const badge=(img.resolution_badge==='4K')?'<span class="badge k4">4K</span>':(img.resolution_badge?'<span class="badge">'+esc(img.resolution_badge)+'</span>':'');
+  const rb=(img.resolution_badge||'1K');
+  const badge=(rb==='4K')?'<span class="badge k4">4K</span>':'<span class="badge">'+esc(rb)+'</span>';
 
   card.innerHTML=
     '<div class="stage" data-stage>'+
@@ -441,7 +442,7 @@ function buildCard(img){
     '</div>'+
     '<div class="card-body">'+
       '<div class="card-title-row"><h4>Design '+num+'</h4>'+
-        '<button class="btn icon" data-compare '+((hasHealed&&hasEnh)?'':'disabled title="No alternate to compare"')+'>⇋ Compare</button></div>'+
+        '<button class="btn icon" data-compare>⇋ Compare</button></div>'+
       '<div class="divider"></div>'+
       '<div class="tool">'+
         '<textarea class="refine-in" rows="2" placeholder="Describe a refinement — e.g. warmer patio lighting, more turquoise water"></textarea>'+
@@ -472,28 +473,47 @@ function buildCard(img){
   card.querySelector('[data-animate]').addEventListener('click',e=>animate(card,img,e.currentTarget));
 
   renderHistory(card,img);
+  updateCompareState(card);
   return card;
+}
+
+/* ── Compare availability: enabled only when an enhanced/healed pair exists AND
+   the user has not yet committed to a version. The append-only `versions` chain
+   is the signal — any pick, refine, or upscale appends a version, which locks
+   the comparison (you've chosen; further work happens on the version history). */
+function updateCompareState(card){
+  const img=imgState[card.dataset.id]; if(!img) return;
+  const btn=card.querySelector('[data-compare]'); if(!btn) return;
+  const hasPair=!!img.enhanced_url && !!img.healed_url;
+  const chosen=!!(img.versions && img.versions.length);
+  btn.disabled=(!hasPair || chosen);
+  btn.title=!hasPair ? 'No alternate to compare'
+          : chosen ? 'Choice locked in — your edit history is now driving this image'
+          : 'Compare enhanced vs healed';
 }
 
 /* ── Compare (pop-out modal) ── */
 let cmpCurrent = { card:null, img:null };
 function openCompareModal(card,img){
-  if(!img.enhanced_url || !img.healed_url) return;
-  cmpCurrent = { card:card, img:img };
+  // Always work off the freshest copy (handlers close over the original object).
+  const latest = imgState[img.projectImageId] || img;
+  if(!latest.enhanced_url || !latest.healed_url) return;
+  if(latest.versions && latest.versions.length) return; // choice locked — nothing to compare
+  cmpCurrent = { card:card, img:latest };
   const stage = $('#cmpStage');
   stage.style.setProperty('--pct','50%');
   // clip-path reveals the TOP image on the LEFT, BASE shows on the RIGHT.
   // So: top = Enhanced (left, matches left tag), base = Healed (right, matches right tag).
   stage.innerHTML =
-    '<img class="base" src="'+esc(img.healed_url)+'" alt="Healed result">'+
-    '<img class="top" src="'+esc(img.enhanced_url)+'" alt="Enhanced result">'+
+    '<img class="base" src="'+esc(latest.healed_url)+'" alt="Healed result">'+
+    '<img class="top" src="'+esc(latest.enhanced_url)+'" alt="Enhanced result">'+
     '<div class="cmp-divider"></div><div class="cmp-handle">⇋</div>'+
     '<span class="cmp-tag l">Enhanced</span><span class="cmp-tag r">Healed</span>'+
     '<input class="cmp-range" type="range" min="0" max="100" value="50" aria-label="Drag to compare enhanced and healed">';
   const range = stage.querySelector('.cmp-range');
   range.addEventListener('input',()=>stage.style.setProperty('--pct',range.value+'%'));
-  const idx = activeIdx(img);
-  const activeSource = (idx>=0 && img.versions[idx]) ? img.versions[idx].source : null;
+  const idx = activeIdx(latest);
+  const activeSource = (idx>=0 && latest.versions[idx]) ? latest.versions[idx].source : null;
   $('#cmpUseEnhanced').classList.toggle('active', activeSource==='enhanced');
   $('#cmpUseHealed').classList.toggle('active', activeSource==='healed');
   $('#cmpModal').classList.add('open');
@@ -550,8 +570,9 @@ function renderHistory(card,img){
 }
 function applyCursor(card,img,d){
   img.current_url=d.current_url; img.active_version_id=d.active_version_id;
+  if(imgState[img.projectImageId]){ imgState[img.projectImageId].current_url=d.current_url; imgState[img.projectImageId].active_version_id=d.active_version_id; }
   card.querySelector('[data-main]').src=d.current_url;
-  renderHistory(card,img); highlightPick(card,img);
+  renderHistory(card,img); highlightPick(card,img); updateCompareState(card);
 }
 async function moveVersion(card,img,dir){
   try{ const d=await api('/api/version/'+dir,{method:'POST',body:{projectImageId:img.projectImageId}}); applyCursor(card,img,d);}catch(e){toast(e.message,true);}
@@ -570,10 +591,11 @@ async function refreshImage(projectImageId){
     const card=$('#cardGrid').querySelector('.card[data-id="'+projectImageId+'"]');
     if(!card) return;
     card.querySelector('[data-main]').src=fresh.current_url||fresh.enhanced_url||'';
-    // badge
+    // badge — always present; defaults to 1K until an upscale stamps 4K on THIS image only
     const stage=card.querySelector('[data-stage]'); let b=stage.querySelector('.badge'); if(b)b.remove();
-    if(fresh.resolution_badge){ const nb=el('span','badge'+(fresh.resolution_badge==='4K'?' k4':'')); nb.textContent=fresh.resolution_badge; stage.appendChild(nb); }
-    renderHistory(card,fresh); highlightPick(card,fresh);
+    const rb=fresh.resolution_badge||'1K';
+    const nb=el('span','badge'+(rb==='4K'?' k4':'')); nb.textContent=rb; stage.appendChild(nb);
+    renderHistory(card,fresh); highlightPick(card,fresh); updateCompareState(card);
   }catch(e){}
 }
 
