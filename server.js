@@ -359,6 +359,7 @@ app.post('/api/enhance', requireAuth, upload.array('images'), async (req, res) =
 
     return res.status(200).json({
       jobId: jobId,
+      albumId: albumId,
       status: 'pending',
       ...responseData
     });
@@ -831,22 +832,10 @@ app.post('/api/project-image-update', async (req, res) => {
   }
 });
 
-// ── Status Proxy ──────────────────────────────────────────────────────────────
-app.get('/api/status', requireAuth, async (req, res) => {
-  const { jobId } = req.query;
-  if (!jobId || jobId === 'undefined') {
-    return res.status(400).json({ error: 'Missing or invalid jobId' });
-  }
-  try {
-    const statusUrl = `${N8N_BASE_URL}/webhook/check-status?jobId=${jobId}`;
-    const response = await axios.get(statusUrl);
-    res.setHeader('Cache-Control', 'no-store');
-    return res.status(response.status).json(response.data);
-  } catch (error) {
-    console.error('Status error:', error.response?.data || error.message);
-    return res.status(500).json({ error: 'Status check failed' });
-  }
-});
+// ── Status Proxy (RETIRED at dashboard cutover) ──────────────────────────────
+// The legacy Sheets gallery polled this. The front-end now redirects straight to
+// /dashboard.html?album=<id> after a batch, which reads Supabase directly, so this
+// n8n Sheets proxy is no longer used. The "Status Check" workflow can be deactivated.
 
 // ── Versions / Gallery helpers (Phase 2/3) ───────────────────────────────────
 // Resolve the canonical project_images row from a (job_id, image_index) pair.
