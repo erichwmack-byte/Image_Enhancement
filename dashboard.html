@@ -503,7 +503,7 @@ function buildCard(img){
   const idx=parseInt(img.image_index,10); const num=isNaN(idx)?'':(idx+1);
   const hasHealed=!!img.healed_url, hasEnh=!!img.enhanced_url;
   const processing=!(img.status==='completed' && (img.current_url||img.enhanced_url));
-  const rb=(img.resolution_badge||'1K');
+  const rb=badgeFor(img);
   const badge=(rb==='4K')?'<span class="badge k4">4K</span>':'<span class="badge">'+esc(rb)+'</span>';
   const stageExtra=processing
     ? '<div class="proc-overlay" data-proc><span class="spin"></span><span>Enhancing…</span></div>'
@@ -646,11 +646,27 @@ function renderHistory(card,img){
   }
   h.appendChild(strip);
 }
+/* Resolution badge reflects the ACTIVE version, not the image row. Only an upscale
+   produces 4K; enhanced / healed / refine / inpaint are all 1K. This fixes the badge
+   reading 4K while browsing back through pre-upscale 1K versions in the history. */
+function badgeFor(img){
+  if(img && img.versions && img.versions.length && img.active_version_id){
+    const v=img.versions.find(x=>x.id===img.active_version_id);
+    if(v) return v.source==='upscale' ? '4K' : '1K';
+  }
+  return '1K'; // base enhanced state, or no versions yet
+}
+function setBadge(card,img){
+  const stage=card&&card.querySelector('[data-stage]'); if(!stage) return;
+  const old=stage.querySelector('.badge'); if(old) old.remove();
+  const rb=badgeFor(img);
+  const nb=el('span','badge'+(rb==='4K'?' k4':'')); nb.textContent=rb; stage.appendChild(nb);
+}
 function applyCursor(card,img,d){
   img.current_url=d.current_url; img.active_version_id=d.active_version_id;
   if(imgState[img.projectImageId]){ imgState[img.projectImageId].current_url=d.current_url; imgState[img.projectImageId].active_version_id=d.active_version_id; }
   card.querySelector('[data-main]').src=d.current_url;
-  renderHistory(card,img); highlightPick(card,img); updateCompareState(card);
+  setBadge(card,img); renderHistory(card,img); highlightPick(card,img); updateCompareState(card);
 }
 async function moveVersion(card,img,dir){
   try{ const d=await api('/api/version/'+dir,{method:'POST',body:{projectImageId:img.projectImageId}}); applyCursor(card,img,d);}catch(e){toast(e.message,true);}
@@ -669,10 +685,7 @@ async function refreshImage(projectImageId){
     const card=$('#cardGrid').querySelector('.card[data-id="'+projectImageId+'"]');
     if(!card) return;
     card.querySelector('[data-main]').src=fresh.current_url||fresh.enhanced_url||'';
-    // badge — always present; defaults to 1K until an upscale stamps 4K on THIS image only
-    const stage=card.querySelector('[data-stage]'); let b=stage.querySelector('.badge'); if(b)b.remove();
-    const rb=fresh.resolution_badge||'1K';
-    const nb=el('span','badge'+(rb==='4K'?' k4':'')); nb.textContent=rb; stage.appendChild(nb);
+    setBadge(card,fresh);
     renderHistory(card,fresh); highlightPick(card,fresh); updateCompareState(card);
   }catch(e){}
 }
@@ -766,9 +779,7 @@ function applyReady(card,fresh){
   card.classList.remove('is-processing');
   const ov=card.querySelector('[data-proc]'); if(ov) ov.remove();
   card.querySelector('[data-main]').src=fresh.current_url||fresh.enhanced_url||'';
-  const stage=card.querySelector('[data-stage]'); let b=stage.querySelector('.badge'); if(b)b.remove();
-  const rb=fresh.resolution_badge||'1K';
-  const nb=el('span','badge'+(rb==='4K'?' k4':'')); nb.textContent=rb; stage.appendChild(nb);
+  setBadge(card,fresh);
   renderHistory(card,fresh); highlightPick(card,fresh); updateCompareState(card);
 }
 
