@@ -741,11 +741,22 @@ async function compositeInpaint(sourceUrl, maskUrl, resultUrl, jobId, imageIndex
   const W = meta.width, H = meta.height;
 
   // 1-channel alpha from the mask (white = show result, black = keep source).
+  // Canvas-exported mask PNGs are RGBA, so flatten onto black to drop the alpha
+  // and force a single greyscale channel. Without this the raw buffer can come
+  // back 2-channel (luma+alpha); the channels:1 joinChannel below then throws,
+  // which sent the WHOLE composite into the catch → raw model output with the
+  // mask un-enforced (full-frame leak). Pin the byte count too, as a guard.
   const alpha = await sharp(maskBuf)
     .resize(W, H, { fit: 'fill' })
+    .flatten({ background: { r: 0, g: 0, b: 0 } })
+    .greyscale()
     .toColourspace('b-w')
+    .removeAlpha()
     .raw()
     .toBuffer();
+  if (alpha.length !== W * H) {
+    throw new Error(`mask alpha channel mismatch: got ${alpha.length} bytes, expected ${W * H}`);
+  }
 
   // Result image with the mask attached as its alpha channel.
   const maskedResult = await sharp(resBuf)
@@ -904,8 +915,16 @@ app.post('/api/inpaint-callback', async (req, res) => {
         try {
           finalUrl = await compositeInpaint(ij.source_url, ij.mask_url, inpainted_url, job_id, image_index);
         } catch (e) {
-          console.error('Inpaint composite failed, using raw result:', e.message);
-          finalUrl = inpainted_url; // graceful degrade to pure Path A
+          // A mask was supplied, so the mask MUST be enforced. Degrading to the raw
+          // model output here is the full-frame leak — never save that. Mark the job
+          // failed and skip the version append so the user can simply retry.
+          console.error('Inpaint composite failed (mask NOT enforced, refusing raw):', e.message);
+          await supabase
+            .from('inpaint_jobs')
+            .update({ status: 'error', error_message: 'Mask composite failed — please retry' })
+            .eq('job_id', job_id)
+            .eq('image_index', String(image_index));
+          return res.status(200).json({ received: true, composite: 'failed' });
         }
       }
 
@@ -1489,8 +1508,6 @@ app.post('/api/version/delete', requireAuth, async (req, res) => {
     if (idx === -1) return res.status(404).json({ error: 'Version not found' });
     const removed = list[idx];
 
-    await supabase.from('project_image_versions').delete().eq('id', versionId);
-
     const remaining = list.filter(function (v) { return v.id !== versionId; });
     // New cursor: prefer the previous version, else the new last, else none (revert to enhanced).
     let newActive = null;
@@ -1503,7 +1520,19 @@ app.post('/api/version/delete', requireAuth, async (req, res) => {
     // Deleting the logo version is also the per-image "remove logo" path — clear its state.
     if (removed.source === 'logo') { update.logo_placement = null; update.logo_base_url = null; }
 
+    // Move the active-version pointer OFF this row BEFORE deleting it. There is a
+    // foreign key on project_images.active_version_id, so deleting a row that's
+    // still referenced as the active version is rejected. The old order deleted
+    // first and swallowed the error, so on the ACTIVE version the cursor moved but
+    // the row lingered in history (deleting a non-active version happened to work).
     await supabase.from('project_images').update(update).eq('id', projectImageId);
+
+    const { error: delErr } = await supabase
+      .from('project_image_versions').delete().eq('id', versionId);
+    if (delErr) {
+      console.error('version row delete failed:', delErr.message);
+      return res.status(500).json({ error: 'Could not delete version' });
+    }
 
     const newIdx = newActive ? remaining.findIndex(function (v) { return v.id === newActive.id; }) : -1;
     return res.status(200).json({
