@@ -771,13 +771,28 @@ async function compositeInpaint(sourceUrl, maskUrl, resultUrl, jobId, imageIndex
 //   maskData = a base64 PNG of the mask (white = edit region, black = locked).
 //   Accepts a raw base64 string or a full data URL ("data:image/png;base64,...").
 app.post('/api/inpaint', requireAuth, async (req, res) => {
-  const { imageUrl, jobId, imageIndex, prompt, maskData } = req.body;
+  const { imageUrl, jobId, imageIndex, prompt, maskData, materialId } = req.body;
+  const cleanPrompt = (prompt || '').trim();
 
-  if (!imageUrl || !jobId || !prompt || !maskData) {
-    return res.status(400).json({ error: 'Missing imageUrl, jobId, prompt, or maskData' });
+  // A material swap can stand in for a text prompt, so require one OR the other.
+  if (!imageUrl || !jobId || !maskData || (!cleanPrompt && !materialId)) {
+    return res.status(400).json({ error: 'Missing imageUrl, jobId, maskData, or (prompt | materialId)' });
   }
 
   try {
+    // 0. If a material was chosen, resolve it server-side (ownership-checked, same
+    //    pattern as logos) so we never trust a client-supplied URL.
+    let materialUrl = null, materialCategory = null;
+    if (materialId) {
+      const { data: material } = await supabase
+        .from('materials').select('id, user_id, image_url, category').eq('id', materialId).maybeSingle();
+      if (!material || material.user_id !== req.user.id) {
+        return res.status(404).json({ error: 'Material not found' });
+      }
+      materialUrl = material.image_url;
+      materialCategory = material.category || '';
+    }
+
     // 1. Decode the mask and upload it to S3 so n8n can fetch it by URL
     //    (consistent with how every other workflow consumes images).
     const b64 = String(maskData).replace(/^data:image\/\w+;base64,/, '');
@@ -797,7 +812,8 @@ app.post('/api/inpaint', requireAuth, async (req, res) => {
         user_id: req.user.id,
         source_url: imageUrl,
         mask_url: maskUrl,
-        prompt: prompt,
+        prompt: cleanPrompt,
+        material_url: materialUrl,
         inpainted_url: null,
         status: 'processing',
         error_message: null,
@@ -810,6 +826,8 @@ app.post('/api/inpaint', requireAuth, async (req, res) => {
     }
 
     // 3. Fire the Inpaint workflow (fire-and-forget; result lands via callback).
+    //    material_url / material_category are only sent when a material was chosen;
+    //    the workflow falls back to the plain text-inpaint path when they're absent.
     const n8nUrl = `${N8N_BASE_URL}/webhook/inpaint_image`;
     axios.post(n8nUrl, {
       image_url: imageUrl,
@@ -817,7 +835,9 @@ app.post('/api/inpaint', requireAuth, async (req, res) => {
       job_id: jobId,
       image_index: String(imageIndex),
       user_email: req.user.email,
-      prompt: prompt
+      prompt: cleanPrompt,
+      material_url: materialUrl || '',
+      material_category: materialCategory || ''
     }, {
       headers: { 'Content-Type': 'application/json' },
       timeout: 120000
@@ -1807,6 +1827,75 @@ app.post('/api/logos/delete', requireAuth, async (req, res) => {
     return res.status(200).json({ ok: true });
   } catch (e) {
     console.error('logo delete error:', e.message);
+    return res.status(500).json({ error: 'Delete failed' });
+  }
+});
+
+// ── Materials: per-user material library (tile / paver / stone swatches) ─────
+//    Near-identical to the logo library, but consumed by the material-aware
+//    inpaint instead of the deterministic sharp composite.
+const MATERIAL_CATEGORIES = ['paver', 'tile', 'decking', 'stone', 'gravel', 'other'];
+
+app.get('/api/materials', requireAuth, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('materials').select('id, name, category, image_url, created_at')
+      .eq('user_id', req.user.id).order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return res.status(200).json({
+      materials: (data || []).map(function (m) {
+        return { id: m.id, name: m.name || 'Material', category: m.category || 'other', imageUrl: m.image_url, createdAt: m.created_at };
+      })
+    });
+  } catch (e) {
+    console.error('materials list error:', e.message);
+    return res.status(500).json({ error: 'Could not load materials' });
+  }
+});
+
+app.post('/api/materials', requireAuth, upload.single('material'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No material file' });
+    const ct = req.file.mimetype || 'image/jpeg';
+    if (!ct.startsWith('image/')) return res.status(400).json({ error: 'File must be an image' });
+    const ext = (ct.split('/')[1] || 'jpg').replace('+xml', '');
+    const key = `materials/${req.user.id}_${Date.now()}.${ext}`;
+    const imageUrl = await uploadBufferToS3(req.file.buffer, key, ct);
+    const name = (req.body && req.body.name)
+      ? String(req.body.name).slice(0, 80)
+      : String(req.file.originalname || 'Material').replace(/\.[^.]+$/, '').slice(0, 80);
+    let category = (req.body && req.body.category) ? String(req.body.category).toLowerCase() : 'other';
+    if (MATERIAL_CATEGORIES.indexOf(category) === -1) category = 'other';
+    const { data, error } = await supabase
+      .from('materials').insert({ user_id: req.user.id, name: name, category: category, image_url: imageUrl })
+      .select('id, name, category, image_url, created_at').single();
+    if (error) throw new Error(error.message);
+    return res.status(200).json({ id: data.id, name: data.name, category: data.category, imageUrl: data.image_url, createdAt: data.created_at });
+  } catch (e) {
+    console.error('material upload error:', e.message);
+    return res.status(500).json({ error: 'Material upload failed' });
+  }
+});
+
+app.post('/api/materials/delete', requireAuth, async (req, res) => {
+  const { materialId } = req.body;
+  if (!materialId) return res.status(400).json({ error: 'Missing materialId' });
+  try {
+    const { data: material } = await supabase
+      .from('materials').select('id, user_id, image_url').eq('id', materialId).maybeSingle();
+    if (!material || material.user_id !== req.user.id) return res.status(404).json({ error: 'Material not found' });
+
+    const prefix = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/`;
+    if (material.image_url && material.image_url.startsWith(prefix)) {
+      const k = decodeURIComponent(material.image_url.slice(prefix.length));
+      try { await s3Client.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: k })); }
+      catch (e) { console.error('material S3 delete failed:', e.message); }
+    }
+    const { error } = await supabase.from('materials').delete().eq('id', materialId);
+    if (error) throw new Error(error.message);
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error('material delete error:', e.message);
     return res.status(500).json({ error: 'Delete failed' });
   }
 });
