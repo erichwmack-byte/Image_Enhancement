@@ -92,6 +92,27 @@
 
   /* ── Album tiles ── */
   .album-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(264px,1fr));gap:22px}
+  /* library (reusable assets — deliberately distinct from album tiles) */
+  .lib-tabs{display:flex;gap:6px;margin-bottom:26px;border-bottom:1px solid var(--hairline)}
+  .lib-tab{padding:10px 16px;font-size:14px;font-weight:600;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .2s var(--ease),border-color .2s var(--ease)}
+  .lib-tab:hover{color:var(--text)}
+  .lib-tab.active{color:var(--text);border-bottom-color:var(--aqua)}
+  .asset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px}
+  .asset{position:relative;border-radius:var(--r-md);overflow:hidden;background:var(--surface);border:1px solid var(--hairline);transition:border-color .2s var(--ease)}
+  .asset:hover{border-color:var(--hairline-strong)}
+  .asset-img{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;overflow:hidden;
+    background:repeating-conic-gradient(#16242f 0% 25%,#0f1c26 0% 50%) 50% / 22px 22px}
+  .asset-img img{max-width:78%;max-height:78%;object-fit:contain}
+  .asset-name{padding:8px 11px;font-size:12.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .asset-del{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:8px;
+    background:rgba(6,16,26,.72);border:1px solid var(--hairline);color:var(--text);
+    display:grid;place-items:center;font-size:13px;opacity:0;transition:opacity .2s var(--ease)}
+  .asset:hover .asset-del{opacity:1}
+  .asset-add{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+    aspect-ratio:1/1;border:1.5px dashed var(--hairline-strong);border-radius:var(--r-md);
+    color:var(--text-muted);cursor:pointer;background:var(--surface);transition:all .2s var(--ease);font-size:13px}
+  .asset-add:hover{border-color:var(--aqua);color:var(--text)}
+  .asset-add .plus{font-size:26px;line-height:1}
   .tile{
     position:relative;border-radius:var(--r-lg);overflow:hidden;
     background:var(--surface);border:1px solid var(--hairline);
@@ -299,6 +320,7 @@
     <span class="spacer"></span>
     <span class="credits">⚡ <b id="creditCount">—</b> credits</span>
     <a class="ghost-btn" href="/">＋ New design</a>
+    <button class="ghost-btn" id="libraryBtn">Library</button>
     <button class="ghost-btn" id="trashBtn">🗑 Trash</button>
     <button class="ghost-btn" id="signOut">Sign out</button>
   </header>
@@ -340,6 +362,27 @@
         </div>
       </div>
       <div id="trashGrid" class="album-grid"></div>
+    </section>
+
+    <!-- Library view (reusable brand assets) -->
+    <section id="libraryView" class="hidden">
+      <a class="back" id="libBack">‹ All albums</a>
+      <div class="page-head">
+        <div>
+          <h1>Library</h1>
+          <p>Reusable brand assets — applied across your albums.</p>
+        </div>
+      </div>
+      <div class="lib-tabs">
+        <button class="lib-tab active" data-lib="logos">Logos</button>
+        <button class="lib-tab" data-lib="materials">Materials</button>
+      </div>
+      <div id="libLogos" class="lib-panel">
+        <div id="logoGrid" class="asset-grid"></div>
+      </div>
+      <div id="libMaterials" class="lib-panel hidden">
+        <div class="empty"><h2>Materials — coming soon</h2><p class="muted">Upload tile, paver, and stone samples to swap into inpaints.</p></div>
+      </div>
     </section>
   </main>
 
@@ -477,6 +520,7 @@ async function openAlbum(a){
   current={albumId:a.albumId,name:a.name,images:[]};
   $('#albumsView').classList.add('hidden');
   $('#trashView').classList.add('hidden');
+  $('#libraryView').classList.add('hidden');
   $('#albumView').classList.remove('hidden');
   $('#albumTitle').textContent=a.name||'Album';
   $('#albumMeta').textContent='Loading…';
@@ -949,6 +993,72 @@ $('#ipCancel').addEventListener('click',closeInpaintModal);
 $('#ipModal').addEventListener('click',e=>{ if(e.target.id==='ipModal') closeInpaintModal(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape' && $('#ipModal').classList.contains('open')) closeInpaintModal(); });
 
+/* ── Library: per-user brand assets (logos now; materials next phase) ── */
+function showOnlyView(id){
+  ['albumsView','albumView','trashView','libraryView'].forEach(function(v){
+    var n=document.getElementById(v); if(n) n.classList.toggle('hidden', v!==id);
+  });
+}
+function openLibrary(){
+  showOnlyView('libraryView');
+  window.scrollTo({top:0,behavior:'smooth'});
+  switchLibTab('logos');
+}
+function switchLibTab(tab){
+  document.querySelectorAll('.lib-tab').forEach(function(b){ b.classList.toggle('active', b.dataset.lib===tab); });
+  $('#libLogos').classList.toggle('hidden', tab!=='logos');
+  $('#libMaterials').classList.toggle('hidden', tab!=='materials');
+  if(tab==='logos') loadLogos();
+}
+async function loadLogos(){
+  const grid=$('#logoGrid');
+  grid.innerHTML='<div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div>';
+  try{
+    const d=await api('/api/logos'); const logos=d.logos||[];
+    grid.innerHTML='';
+    const add=el('button','asset-add');
+    add.innerHTML='<span class="plus">＋</span><span>Upload logo</span>';
+    add.addEventListener('click',pickLogoFile);
+    grid.appendChild(add);
+    logos.forEach(function(l){ grid.appendChild(buildAsset(l)); });
+  }catch(e){ grid.innerHTML='<div class="empty"><h2>Could not load logos</h2></div>'; }
+}
+function buildAsset(l){
+  const a=el('div','asset');
+  a.innerHTML=
+    '<div class="asset-img"><img src="'+esc(l.imageUrl)+'" alt=""></div>'+
+    '<div class="asset-name">'+esc(l.name||'Logo')+'</div>'+
+    '<button class="asset-del" title="Delete logo">🗑</button>';
+  a.querySelector('.asset-del').addEventListener('click',function(){ deleteLogo(l,a); });
+  return a;
+}
+function pickLogoFile(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/png,image/svg+xml,image/webp,image/jpeg,image/*';
+  inp.addEventListener('change',function(){ if(inp.files&&inp.files[0]) uploadLogo(inp.files[0]); });
+  inp.click();
+}
+async function uploadLogo(file){
+  if(file.size>5*1024*1024){ toast('Logo must be under 5MB',true); return; }
+  toast('Uploading logo…');
+  try{
+    const fd=new FormData(); fd.append('logo',file);
+    const res=await fetch('/api/logos',{method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:fd});
+    if(res.status===401){ location.replace('/'); return; }
+    let d=null; try{ d=await res.json(); }catch(e){}
+    if(!res.ok) throw new Error((d&&d.error)||'Upload failed');
+    toast('Logo added'); loadLogos();
+  }catch(e){ toast(e.message,true); }
+}
+async function deleteLogo(l,node){
+  if(!confirm('Delete this logo? Images you have already branded keep their logo.')) return;
+  try{ await api('/api/logos/delete',{method:'POST',body:{logoId:l.id}}); node.remove(); toast('Logo deleted'); }
+  catch(e){ toast(e.message,true); }
+}
+$('#libraryBtn').addEventListener('click',openLibrary);
+$('#libBack').addEventListener('click',function(){ showOnlyView('albumsView'); loadAlbums(); });
+document.querySelectorAll('.lib-tab').forEach(function(b){ b.addEventListener('click',function(){ switchLibTab(b.dataset.lib); }); });
+
 /* ── Trash: soft delete + restore (30-day purge runs server-side via cron) ── */
 async function deleteImage(card,img){
   if(!confirm('Move this design to Trash? You can restore it within 30 days.')) return;
@@ -963,6 +1073,7 @@ async function deleteImage(card,img){
 async function openTrash(){
   $('#albumsView').classList.add('hidden');
   $('#albumView').classList.add('hidden');
+  $('#libraryView').classList.add('hidden');
   $('#trashView').classList.remove('hidden');
   window.scrollTo({top:0,behavior:'smooth'});
   const grid=$('#trashGrid'); grid.innerHTML='<div class="skeleton"></div><div class="skeleton"></div>';
