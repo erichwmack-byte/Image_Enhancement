@@ -306,6 +306,24 @@
   .lg-swatch img{max-width:80%;max-height:80%;object-fit:contain}
   .lg-pick-empty{font-size:13px;color:var(--text-muted)}
 
+  /* materials library toolbar + inpaint material picker */
+  .lib-toolbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+  .lib-field{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted)}
+  .lib-field select{background:var(--surface);color:var(--text);border:1px solid var(--hairline);
+    border-radius:9px;padding:7px 10px;font-size:13px;cursor:pointer}
+  .asset-cat{padding:0 11px 9px;font-size:11px;color:var(--text-muted);text-transform:capitalize;opacity:.8;margin-top:-4px}
+  .ip-material{display:flex;flex-direction:column;gap:8px}
+  .ip-material-label{font-size:13px;font-weight:600;color:var(--text)}
+  .ip-mat-pick{display:flex;gap:10px;flex-wrap:wrap;align-items:center;min-height:54px}
+  .ip-mat-swatch{position:relative;width:54px;height:54px;border-radius:10px;overflow:hidden;border:2px solid var(--hairline);
+    cursor:pointer;background:var(--bg-2);display:flex;align-items:center;justify-content:center;flex-direction:column}
+  .ip-mat-swatch img{width:100%;height:100%;object-fit:cover}
+  .ip-mat-swatch.active{border-color:var(--aqua)}
+  .ip-mat-none{width:54px;height:54px;border-radius:10px;border:2px solid var(--hairline);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-muted);background:var(--surface)}
+  .ip-mat-none.active{border-color:var(--aqua);color:var(--text)}
+  .ip-mat-empty{font-size:13px;color:var(--text-muted)}
+
   /* toast */
   .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);
     z-index:70;padding:12px 20px;border-radius:14px;font-size:14px;font-weight:600;
@@ -392,7 +410,20 @@
         <div id="logoGrid" class="asset-grid"></div>
       </div>
       <div id="libMaterials" class="lib-panel hidden">
-        <div class="empty"><h2>Materials — coming soon</h2><p class="muted">Upload tile, paver, and stone samples to swap into inpaints.</p></div>
+        <div class="lib-toolbar">
+          <label class="lib-field">New uploads are
+            <select id="matCategory">
+              <option value="paver">Paver</option>
+              <option value="tile">Tile</option>
+              <option value="decking">Decking</option>
+              <option value="stone">Stone</option>
+              <option value="gravel">Gravel</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <span class="muted">Use edge-to-edge texture swatches for the cleanest swaps.</span>
+        </div>
+        <div id="materialGrid" class="asset-grid"></div>
       </div>
     </section>
   </main>
@@ -430,6 +461,10 @@
         <label class="ip-size">Size <input type="range" id="ipSize" min="6" max="140" value="40"></label>
         <button class="btn" id="ipClear">Clear mask</button>
         <span class="ip-hint">Only the painted area changes — everything else is preserved exactly.</span>
+      </div>
+      <div class="ip-material">
+        <span class="ip-material-label">Swap material <span class="muted">(optional)</span></span>
+        <div id="ipMatPick" class="ip-mat-pick"></div>
       </div>
       <textarea id="ipPrompt" class="refine-in" rows="2" placeholder="Describe the fix for the painted area — e.g. replace with smooth travertine pavers, matching the surrounding shadows"></textarea>
       <div class="ip-actions">
@@ -958,17 +993,54 @@ async function download(url,name){
    user's own mask strokes, so toDataURL() is never tainted (no S3 CORS needed).
    We keep a visible aqua overlay + a hidden white-on-black mask in lockstep, and
    export the mask as a PNG to /api/inpaint. */
-let ipState={card:null,img:null,view:null,mask:null,drawing:false,mode:'brush',last:null,painted:false};
+let ipState={card:null,img:null,view:null,mask:null,drawing:false,mode:'brush',last:null,painted:false,materialId:null,materialCategory:null};
 
 function openInpaintModal(card,img){
   const latest=imgState[img.projectImageId]||img;
   ipState.card=card; ipState.img=latest; ipState.painted=false; ipState.last=null;
+  ipState.materialId=null; ipState.materialCategory=null;
   setIpMode('brush');
   $('#ipPrompt').value='';
+  ipLoadMaterials();
   const im=$('#ipImg');
   im.onload=()=>ipSetupCanvas(im);
   im.src=card.querySelector('[data-main]').src;
   $('#ipModal').classList.add('open');
+}
+async function ipLoadMaterials(){
+  const pick=$('#ipMatPick');
+  pick.innerHTML='<span class="ip-mat-empty">Loading…</span>';
+  let materials=[];
+  try{ const d=await api('/api/materials'); materials=d.materials||[]; }catch(e){}
+  pick.innerHTML='';
+  // "None" tile — plain text inpaint, selected by default.
+  const none=el('button','ip-mat-none active'); none.textContent='None';
+  none.addEventListener('click',()=>ipSelectMaterial(null,none));
+  pick.appendChild(none);
+  if(!materials.length){
+    const sp=el('span','ip-mat-empty');
+    sp.innerHTML='No materials yet — add some in <b>Library → Materials</b>.';
+    pick.appendChild(sp);
+    return;
+  }
+  materials.forEach(function(m){
+    const sw=el('button','ip-mat-swatch');
+    sw.title=(m.name||'Material')+' · '+(m.category||'other');
+    sw.innerHTML='<img src="'+esc(m.imageUrl)+'" alt="">';
+    sw.addEventListener('click',()=>ipSelectMaterial(m,sw));
+    pick.appendChild(sw);
+  });
+}
+function ipSelectMaterial(m,node){
+  document.querySelectorAll('#ipMatPick .ip-mat-swatch, #ipMatPick .ip-mat-none')
+    .forEach(s=>s.classList.remove('active'));
+  node.classList.add('active');
+  ipState.materialId=m?m.id:null;
+  ipState.materialCategory=m?m.category:null;
+  const pr=$('#ipPrompt');
+  pr.placeholder=m
+    ? 'Optional — add scale or layout notes (e.g. large 18×18 pavers, running-bond pattern). The swatch drives the look.'
+    : 'Describe the fix for the painted area — e.g. replace with smooth travertine pavers, matching the surrounding shadows';
 }
 function closeInpaintModal(){
   $('#ipModal').classList.remove('open');
@@ -1026,19 +1098,20 @@ function ipStroke(p){
 async function runInpaint(){
   if(!ipState.painted){ toast('Paint over the area to fix first',true); return; }
   const prompt=$('#ipPrompt').value.trim();
-  if(!prompt){ toast('Describe the correction first',true); return; }
+  const materialId=ipState.materialId;
+  if(!prompt && !materialId){ toast('Pick a material or describe the correction first',true); return; }
   const img=ipState.img, card=ipState.card;
   const maskData=ipState.mask.toDataURL('image/png');
   const src=card.querySelector('[data-main]').src;
   const go=$('#ipGo'); go.disabled=true; go.textContent='Starting…';
   try{
-    await api('/api/inpaint',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt,maskData}});
+    await api('/api/inpaint',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt,maskData,materialId}});
     go.textContent='Generating…';
     pollStatus('/api/inpaint-status',img.jobId,img.image_index,'inpainted_url',async()=>{
       go.disabled=false; go.textContent='Generate inpaint';
       closeInpaintModal();
       await refreshImage(img.projectImageId);
-      toast('Inpaint saved as a new version');
+      toast(materialId?'Material swap saved as a new version':'Inpaint saved as a new version');
     },()=>{ go.disabled=false; go.textContent='Generate inpaint'; });
   }catch(e){ go.disabled=false; go.textContent='Generate inpaint'; toast(e.message,true); }
 }
@@ -1071,6 +1144,7 @@ function switchLibTab(tab){
   $('#libLogos').classList.toggle('hidden', tab!=='logos');
   $('#libMaterials').classList.toggle('hidden', tab!=='materials');
   if(tab==='logos') loadLogos();
+  if(tab==='materials') loadMaterials();
 }
 async function loadLogos(){
   const grid=$('#logoGrid');
@@ -1115,6 +1189,55 @@ async function uploadLogo(file){
 async function deleteLogo(l,node){
   if(!confirm('Delete this logo? Images you have already branded keep their logo.')) return;
   try{ await api('/api/logos/delete',{method:'POST',body:{logoId:l.id}}); node.remove(); toast('Logo deleted'); }
+  catch(e){ toast(e.message,true); }
+}
+
+/* ── Library: Materials (per-user texture swatches for material-aware inpaint) ── */
+async function loadMaterials(){
+  const grid=$('#materialGrid');
+  grid.innerHTML='<div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div>';
+  try{
+    const d=await api('/api/materials'); const materials=d.materials||[];
+    grid.innerHTML='';
+    const add=el('button','asset-add');
+    add.innerHTML='<span class="plus">＋</span><span>Upload material</span>';
+    add.addEventListener('click',pickMaterialFile);
+    grid.appendChild(add);
+    materials.forEach(function(m){ grid.appendChild(buildMaterialAsset(m)); });
+  }catch(e){ grid.innerHTML='<div class="empty"><h2>Could not load materials</h2></div>'; }
+}
+function buildMaterialAsset(m){
+  const a=el('div','asset');
+  a.innerHTML=
+    '<div class="asset-img"><img src="'+esc(m.imageUrl)+'" alt="" style="max-width:100%;max-height:100%;object-fit:cover"></div>'+
+    '<div class="asset-name">'+esc(m.name||'Material')+'</div>'+
+    '<div class="asset-cat">'+esc(m.category||'other')+'</div>'+
+    '<button class="asset-del" title="Delete material">🗑</button>';
+  a.querySelector('.asset-del').addEventListener('click',function(){ deleteMaterial(m,a); });
+  return a;
+}
+function pickMaterialFile(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/jpeg,image/png,image/webp,image/*';
+  inp.addEventListener('change',function(){ if(inp.files&&inp.files[0]) uploadMaterial(inp.files[0]); });
+  inp.click();
+}
+async function uploadMaterial(file){
+  if(file.size>5*1024*1024){ toast('Material must be under 5MB',true); return; }
+  const category=($('#matCategory')&&$('#matCategory').value)||'other';
+  toast('Uploading material…');
+  try{
+    const fd=new FormData(); fd.append('material',file); fd.append('category',category);
+    const res=await fetch('/api/materials',{method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:fd});
+    if(res.status===401){ location.replace('/'); return; }
+    let d=null; try{ d=await res.json(); }catch(e){}
+    if(!res.ok) throw new Error((d&&d.error)||'Upload failed');
+    toast('Material added'); loadMaterials();
+  }catch(e){ toast(e.message,true); }
+}
+async function deleteMaterial(m,node){
+  if(!confirm('Delete this material? Inpaints you already generated are unaffected.')) return;
+  try{ await api('/api/materials/delete',{method:'POST',body:{materialId:m.id}}); node.remove(); toast('Material deleted'); }
   catch(e){ toast(e.message,true); }
 }
 $('#libraryBtn').addEventListener('click',openLibrary);
