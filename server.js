@@ -1884,10 +1884,11 @@ async function stampLogoOnImage(image, jobId, placement) {
       .from('project_image_versions').select('seq')
       .eq('project_image_id', image.id).order('seq', { ascending: false }).limit(1).maybeSingle();
     const nextSeq = (last && last.seq ? last.seq : 0) + 1;
-    const { data: v } = await supabase
+    const { data: v, error: insErr } = await supabase
       .from('project_image_versions')
       .insert({ project_image_id: image.id, url: brandedUrl, source: 'logo', seq: nextSeq })
       .select('id').single();
+    if (insErr || !v) throw new Error('logo version insert failed: ' + (insErr ? insErr.message : 'no row returned'));
     versionId = v.id;
   }
   await supabase.from('project_images')
