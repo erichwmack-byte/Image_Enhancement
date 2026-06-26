@@ -1697,6 +1697,69 @@ app.post('/api/purge-deleted', async (req, res) => {
   }
 });
 
+// ── Logos: per-user logo library ─────────────────────────────────────────────
+app.get('/api/logos', requireAuth, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('logos').select('id, name, image_url, created_at')
+      .eq('user_id', req.user.id).order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return res.status(200).json({
+      logos: (data || []).map(function (l) {
+        return { id: l.id, name: l.name || 'Logo', imageUrl: l.image_url, createdAt: l.created_at };
+      })
+    });
+  } catch (e) {
+    console.error('logos list error:', e.message);
+    return res.status(500).json({ error: 'Could not load logos' });
+  }
+});
+
+app.post('/api/logos', requireAuth, upload.single('logo'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No logo file' });
+    const ct = req.file.mimetype || 'image/png';
+    if (!ct.startsWith('image/')) return res.status(400).json({ error: 'File must be an image' });
+    const ext = (ct.split('/')[1] || 'png').replace('+xml', '');
+    const key = `logos/${req.user.id}_${Date.now()}.${ext}`;
+    const imageUrl = await uploadBufferToS3(req.file.buffer, key, ct);
+    const name = (req.body && req.body.name)
+      ? String(req.body.name).slice(0, 80)
+      : String(req.file.originalname || 'Logo').replace(/\.[^.]+$/, '').slice(0, 80);
+    const { data, error } = await supabase
+      .from('logos').insert({ user_id: req.user.id, name: name, image_url: imageUrl })
+      .select('id, name, image_url, created_at').single();
+    if (error) throw new Error(error.message);
+    return res.status(200).json({ id: data.id, name: data.name, imageUrl: data.image_url, createdAt: data.created_at });
+  } catch (e) {
+    console.error('logo upload error:', e.message);
+    return res.status(500).json({ error: 'Logo upload failed' });
+  }
+});
+
+app.post('/api/logos/delete', requireAuth, async (req, res) => {
+  const { logoId } = req.body;
+  if (!logoId) return res.status(400).json({ error: 'Missing logoId' });
+  try {
+    const { data: logo } = await supabase
+      .from('logos').select('id, user_id, image_url').eq('id', logoId).maybeSingle();
+    if (!logo || logo.user_id !== req.user.id) return res.status(404).json({ error: 'Logo not found' });
+
+    const prefix = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/`;
+    if (logo.image_url && logo.image_url.startsWith(prefix)) {
+      const k = decodeURIComponent(logo.image_url.slice(prefix.length));
+      try { await s3Client.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: k })); }
+      catch (e) { console.error('logo S3 delete failed:', e.message); }
+    }
+    const { error } = await supabase.from('logos').delete().eq('id', logoId);
+    if (error) throw new Error(error.message);
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error('logo delete error:', e.message);
+    return res.status(500).json({ error: 'Delete failed' });
+  }
+});
+
 // ── Album: rename ────────────────────────────────────────────────────────────
 app.patch('/api/album/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
