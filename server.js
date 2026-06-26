@@ -1449,6 +1449,56 @@ app.post('/api/version/set', requireAuth, async (req, res) => {
   }
 });
 
+// ── Version: delete one version from an image's history ──────────────────────
+app.post('/api/version/delete', requireAuth, async (req, res) => {
+  const { projectImageId, versionId } = req.body || {};
+  if (!projectImageId || !versionId) {
+    return res.status(400).json({ error: 'Missing projectImageId or versionId' });
+  }
+  try {
+    const img = await getOwnedProjectImage(req.user.id, projectImageId);
+    if (!img) return res.status(404).json({ error: 'Image not found' });
+
+    const { data: versions } = await supabase
+      .from('project_image_versions')
+      .select('id, url, source, seq')
+      .eq('project_image_id', projectImageId)
+      .order('seq', { ascending: true });
+    const list = versions || [];
+    const idx = list.findIndex(function (v) { return v.id === versionId; });
+    if (idx === -1) return res.status(404).json({ error: 'Version not found' });
+    const removed = list[idx];
+
+    await supabase.from('project_image_versions').delete().eq('id', versionId);
+
+    const remaining = list.filter(function (v) { return v.id !== versionId; });
+    // New cursor: prefer the previous version, else the new last, else none (revert to enhanced).
+    let newActive = null;
+    if (remaining.length) newActive = remaining[Math.max(0, idx - 1)] || remaining[remaining.length - 1];
+
+    const update = {
+      active_version_id: newActive ? newActive.id : null,
+      current_url: newActive ? newActive.url : (img.enhanced_url || null)
+    };
+    // Deleting the logo version is also the per-image "remove logo" path — clear its state.
+    if (removed.source === 'logo') { update.logo_placement = null; update.logo_base_url = null; }
+
+    await supabase.from('project_images').update(update).eq('id', projectImageId);
+
+    const newIdx = newActive ? remaining.findIndex(function (v) { return v.id === newActive.id; }) : -1;
+    return res.status(200).json({
+      ok: true,
+      current_url: update.current_url,
+      active_version_id: update.active_version_id,
+      canUndo: newIdx > 0,
+      canRedo: newActive ? newIdx < remaining.length - 1 : false
+    });
+  } catch (e) {
+    console.error('version/delete error:', e.message);
+    return res.status(500).json({ error: 'Could not delete version' });
+  }
+});
+
 // ── Albums: list a user's albums with cover + count ──────────────────────────
 app.get('/api/albums', requireAuth, async (req, res) => {
   try {
