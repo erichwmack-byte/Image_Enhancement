@@ -8,7 +8,7 @@ const FormData = require('form-data');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
 const Stripe = require('stripe');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const crypto = require('crypto');
 const sharp = require('sharp'); // server-side masked composite for inpaint (Path A + composite)
 
@@ -1468,7 +1468,7 @@ app.get('/api/albums', requireAuth, async (req, res) => {
       const { data } = await supabase
         .from('project_images')
         .select('project_id, current_url, enhanced_url, image_index, status')
-        .in('project_id', projIds).order('image_index', { ascending: true });
+        .in('project_id', projIds).is('deleted_at', null).order('image_index', { ascending: true });
       imgs = data || [];
     }
 
@@ -1515,7 +1515,7 @@ app.get('/api/album/:id', requireAuth, async (req, res) => {
       const { data: imgs } = await supabase
         .from('project_images')
         .select('id, project_id, image_index, image_name, original_url, enhanced_url, healed_url, current_url, active_version_id, upscaled_url, resolution_badge, status')
-        .in('project_id', projIds);
+        .in('project_id', projIds).is('deleted_at', null);
 
       const ids = (imgs || []).map(function (i) { return i.id; });
       const versionsByImage = {};
@@ -1559,6 +1559,141 @@ app.get('/api/album/:id', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('album detail error:', e.message);
     return res.status(500).json({ error: 'Album load failed' });
+  }
+});
+
+// ── Image: soft delete (move to Trash) ───────────────────────────────────────
+app.post('/api/image/delete', requireAuth, async (req, res) => {
+  const { projectImageId } = req.body;
+  if (!projectImageId) return res.status(400).json({ error: 'Missing projectImageId' });
+  try {
+    const img = await getOwnedProjectImage(req.user.id, projectImageId);
+    if (!img) return res.status(404).json({ error: 'Image not found' });
+    const { error } = await supabase
+      .from('project_images')
+      .update({ deleted_at: new Date() })
+      .eq('id', projectImageId);
+    if (error) throw new Error(error.message);
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error('image delete error:', e.message);
+    return res.status(500).json({ error: 'Delete failed' });
+  }
+});
+
+// ── Image: restore from Trash ────────────────────────────────────────────────
+app.post('/api/image/restore', requireAuth, async (req, res) => {
+  const { projectImageId } = req.body;
+  if (!projectImageId) return res.status(400).json({ error: 'Missing projectImageId' });
+  try {
+    // getOwnedProjectImage does NOT filter deleted_at, so it still finds a trashed row.
+    const img = await getOwnedProjectImage(req.user.id, projectImageId);
+    if (!img) return res.status(404).json({ error: 'Image not found' });
+    const { error } = await supabase
+      .from('project_images')
+      .update({ deleted_at: null })
+      .eq('id', projectImageId);
+    if (error) throw new Error(error.message);
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error('image restore error:', e.message);
+    return res.status(500).json({ error: 'Restore failed' });
+  }
+});
+
+// ── Trash: list this user's soft-deleted images ──────────────────────────────
+app.get('/api/trash', requireAuth, async (req, res) => {
+  try {
+    const { data: projects } = await supabase
+      .from('projects').select('id, album_id').eq('user_id', req.user.id);
+    const projIds = (projects || []).map(function (p) { return p.id; });
+    if (!projIds.length) return res.status(200).json({ images: [] });
+    const albumOfProj = {}; (projects || []).forEach(function (p) { albumOfProj[p.id] = p.album_id; });
+
+    const { data: imgs } = await supabase
+      .from('project_images')
+      .select('id, project_id, image_index, current_url, enhanced_url, deleted_at')
+      .in('project_id', projIds)
+      .not('deleted_at', 'is', null)
+      .order('deleted_at', { ascending: false });
+
+    const albumIds = [...new Set((imgs || []).map(function (i) { return albumOfProj[i.project_id]; }).filter(Boolean))];
+    const albumName = {};
+    if (albumIds.length) {
+      const { data: albums } = await supabase.from('albums').select('id, name').in('id', albumIds);
+      (albums || []).forEach(function (a) { albumName[a.id] = a.name; });
+    }
+
+    const images = (imgs || []).map(function (i) {
+      const aid = albumOfProj[i.project_id];
+      return {
+        projectImageId: i.id,
+        albumId: aid || null,
+        albumName: albumName[aid] || 'Album',
+        image_index: i.image_index,
+        thumb: i.current_url || i.enhanced_url || null,
+        deleted_at: i.deleted_at
+      };
+    });
+    return res.status(200).json({ images: images });
+  } catch (e) {
+    console.error('trash list error:', e.message);
+    return res.status(500).json({ error: 'Trash load failed' });
+  }
+});
+
+// ── Purge: hard-delete images trashed > 30 days ago (cron, secret-guarded) ────
+// Called daily by the "Purge Deleted" n8n workflow. Removes the version rows,
+// the image rows, and every S3 object owned by those images.
+app.post('/api/purge-deleted', async (req, res) => {
+  if (req.headers['x-callback-secret'] !== CALLBACK_SECRET) {
+    return res.status(403).json({ error: 'Invalid callback secret' });
+  }
+  try {
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: imgs } = await supabase
+      .from('project_images')
+      .select('id, original_url, enhanced_url, healed_url, current_url, upscaled_url')
+      .not('deleted_at', 'is', null)
+      .lt('deleted_at', cutoff);
+
+    if (!imgs || !imgs.length) return res.status(200).json({ purged: 0, s3Deleted: 0 });
+    const imageIds = imgs.map(function (i) { return i.id; });
+
+    // Gather every S3 URL tied to these images: column URLs + all version URLs.
+    const urls = new Set();
+    imgs.forEach(function (i) {
+      ['original_url', 'enhanced_url', 'healed_url', 'current_url', 'upscaled_url'].forEach(function (k) {
+        if (i[k]) urls.add(i[k]);
+      });
+    });
+    const { data: versions } = await supabase
+      .from('project_image_versions').select('url').in('project_image_id', imageIds);
+    (versions || []).forEach(function (v) { if (v.url) urls.add(v.url); });
+
+    // Delete only objects in OUR bucket; ignore anything else.
+    const prefix = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/`;
+    let s3Deleted = 0;
+    for (const u of urls) {
+      if (!u.startsWith(prefix)) continue;
+      const key = decodeURIComponent(u.slice(prefix.length));
+      try {
+        await s3Client.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+        s3Deleted++;
+      } catch (e) {
+        console.error('purge S3 delete failed for key', key, '-', e.message);
+      }
+    }
+
+    // Remove DB rows (versions first to respect the FK).
+    await supabase.from('project_image_versions').delete().in('project_image_id', imageIds);
+    await supabase.from('project_images').delete().in('id', imageIds);
+
+    console.log(`Purge: removed ${imageIds.length} image(s), ${s3Deleted} S3 object(s).`);
+    return res.status(200).json({ purged: imageIds.length, s3Deleted: s3Deleted });
+  } catch (e) {
+    console.error('purge error:', e.message);
+    return res.status(500).json({ error: 'Purge failed' });
   }
 });
 
