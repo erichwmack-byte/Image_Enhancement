@@ -732,6 +732,14 @@ function renderHistory(card,img){
   nav.appendChild(undo); nav.appendChild(redo); nav.appendChild(del); h.appendChild(nav);
 
   const strip=el('div','hist-strip');
+  // mouse wheel: translate vertical wheel into horizontal scroll (native only does this for trackpad deltaX)
+  strip.addEventListener('wheel',(e)=>{
+    if(strip.scrollWidth<=strip.clientWidth) return;        // nothing to scroll
+    const dy=e.deltaY; if(!dy) return;                       // horizontal wheels scroll natively
+    const atStart=strip.scrollLeft<=0, atEnd=strip.scrollLeft+strip.clientWidth>=strip.scrollWidth-1;
+    if((dy<0&&atStart)||(dy>0&&atEnd)) return;               // at an edge → let the page scroll
+    strip.scrollLeft+=dy; e.preventDefault();
+  },{passive:false});
   if(img.versions&&img.versions.length){
     img.versions.forEach(v=>{
       const th=el('button','hist-thumb'+(v.id===img.active_version_id?' active':''));
