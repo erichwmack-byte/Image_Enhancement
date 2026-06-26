@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -160,6 +161,24 @@
     }
 
     .btn-buy:hover { background: var(--aqua-light); }
+
+    .btn-dashboard {
+      background: var(--aqua);
+      color: #06101A;
+      border: none;
+      padding: 5px 14px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.2s;
+      font-family: 'DM Sans', sans-serif;
+      text-decoration: none;
+      display: inline-block;
+      white-space: nowrap;
+    }
+
+    .btn-dashboard:hover { filter: brightness(1.08); }
 
     .btn-logout {
       background: none;
@@ -1150,6 +1169,7 @@
   <span class="credit-label">Credits</span>
   <span id="credit-count">0</span>
   <div class="divider-v"></div>
+  <a class="btn-dashboard" href="/dashboard.html">▦ My Albums</a>
   <button class="btn-buy" onclick="openPurchaseModal()">+ Buy</button>
   <button class="btn-change-pw" onclick="openChangePasswordModal()">Change Password</button>
   <button class="btn-logout" onclick="logout()">Sign Out</button>
