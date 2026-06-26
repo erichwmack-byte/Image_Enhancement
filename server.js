@@ -10,6 +10,7 @@ const { createClient } = require('@supabase/supabase-js');
 const Stripe = require('stripe');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const crypto = require('crypto');
+const sharp = require('sharp'); // server-side masked composite for inpaint (Path A + composite)
 
 const app = express();
 const upload = multer();
@@ -53,7 +54,7 @@ const CREDIT_COSTS = {
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(express.static('.'));
 app.use('/webhooks/stripe', express.raw({ type: 'application/json' }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // raised for inpaint mask (base64 PNG) payloads
 
 // ── Auth Middleware ───────────────────────────────────────────────────────────
 async function requireAuth(req, res, next) {
@@ -716,6 +717,234 @@ app.get('/api/refine-status', requireAuth, async (req, res) => {
 
   } catch (error) {
     console.error('Refine status check error:', error.message);
+    return res.status(500).json({ error: 'Status check failed' });
+  }
+});
+
+// ── Inpaint: server-side masked composite (Path A + composite) ───────────────
+// Gemini regenerates the whole frame, so unmasked pixels can drift. We pin them
+// back: take the model output INSIDE the white mask and the original SOURCE
+// everywhere else, guaranteeing pixel-identical unmasked regions without leaving
+// our endpoint. Degrades gracefully — on any failure we return the raw result.
+async function compositeInpaint(sourceUrl, maskUrl, resultUrl, jobId, imageIndex) {
+  const [srcRes, maskRes, resRes] = await Promise.all([
+    axios.get(sourceUrl, { responseType: 'arraybuffer' }),
+    axios.get(maskUrl, { responseType: 'arraybuffer' }),
+    axios.get(resultUrl, { responseType: 'arraybuffer' })
+  ]);
+  const srcBuf = Buffer.from(srcRes.data);
+  const maskBuf = Buffer.from(maskRes.data);
+  const resBuf = Buffer.from(resRes.data);
+
+  // Source dimensions are the canonical canvas; normalize result + mask to match.
+  const meta = await sharp(srcBuf).metadata();
+  const W = meta.width, H = meta.height;
+
+  // 1-channel alpha from the mask (white = show result, black = keep source).
+  const alpha = await sharp(maskBuf)
+    .resize(W, H, { fit: 'fill' })
+    .toColourspace('b-w')
+    .raw()
+    .toBuffer();
+
+  // Result image with the mask attached as its alpha channel.
+  const maskedResult = await sharp(resBuf)
+    .resize(W, H, { fit: 'fill' })
+    .removeAlpha()
+    .joinChannel(alpha, { raw: { width: W, height: H, channels: 1 } })
+    .png()
+    .toBuffer();
+
+  // Lay the masked result over the untouched source.
+  const finalBuf = await sharp(srcBuf)
+    .resize(W, H, { fit: 'fill' })
+    .composite([{ input: maskedResult }])
+    .jpeg({ quality: 95 })
+    .toBuffer();
+
+  const key = `${jobId}_inpaint_final_${imageIndex}_${Date.now()}.jpg`;
+  return await uploadBufferToS3(finalBuf, key, 'image/jpeg');
+}
+
+// ── Inpaint: Start Job (async — mask-based correction, Phase D) ──────────────
+// Body: { imageUrl, jobId, imageIndex, prompt, maskData }
+//   maskData = a base64 PNG of the mask (white = edit region, black = locked).
+//   Accepts a raw base64 string or a full data URL ("data:image/png;base64,...").
+app.post('/api/inpaint', requireAuth, async (req, res) => {
+  const { imageUrl, jobId, imageIndex, prompt, maskData } = req.body;
+
+  if (!imageUrl || !jobId || !prompt || !maskData) {
+    return res.status(400).json({ error: 'Missing imageUrl, jobId, prompt, or maskData' });
+  }
+
+  try {
+    // 1. Decode the mask and upload it to S3 so n8n can fetch it by URL
+    //    (consistent with how every other workflow consumes images).
+    const b64 = String(maskData).replace(/^data:image\/\w+;base64,/, '');
+    const maskBuffer = Buffer.from(b64, 'base64');
+    if (!maskBuffer.length) {
+      return res.status(400).json({ error: 'Invalid maskData' });
+    }
+    const maskKey = `${jobId}_mask_${imageIndex}_${Date.now()}.png`;
+    const maskUrl = await uploadBufferToS3(maskBuffer, maskKey, 'image/png');
+
+    // 2. Upsert the tracking row (re-inpainting the same image resets it).
+    const { error: upsertError } = await supabase
+      .from('inpaint_jobs')
+      .upsert({
+        job_id: jobId,
+        image_index: String(imageIndex),
+        user_id: req.user.id,
+        source_url: imageUrl,
+        mask_url: maskUrl,
+        prompt: prompt,
+        inpainted_url: null,
+        status: 'processing',
+        error_message: null,
+        completed_at: null
+      }, { onConflict: 'job_id,image_index' });
+
+    if (upsertError) {
+      console.error('Supabase inpaint upsert error:', upsertError.message);
+      return res.status(500).json({ error: 'Could not create inpaint job' });
+    }
+
+    // 3. Fire the Inpaint workflow (fire-and-forget; result lands via callback).
+    const n8nUrl = `${N8N_BASE_URL}/webhook/inpaint_image`;
+    axios.post(n8nUrl, {
+      image_url: imageUrl,
+      mask_url: maskUrl,
+      job_id: jobId,
+      image_index: String(imageIndex),
+      user_email: req.user.email,
+      prompt: prompt
+    }, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 120000
+    }).catch(err => {
+      console.error('n8n inpaint fire-and-forget error:', err.message);
+    });
+
+    return res.status(200).json({
+      status: 'processing',
+      job_id: jobId,
+      image_index: String(imageIndex)
+    });
+
+  } catch (error) {
+    console.error('Inpaint error:', error.message);
+    return res.status(500).json({ error: 'Inpaint request failed' });
+  }
+});
+
+// ── Inpaint: Callback from n8n ───────────────────────────────────────────────
+app.post('/api/inpaint-callback', async (req, res) => {
+  const secret = req.headers['x-callback-secret'];
+  if (secret !== CALLBACK_SECRET) {
+    return res.status(403).json({ error: 'Invalid callback secret' });
+  }
+
+  const { job_id, image_index, status, inpainted_url, error_message } = req.body;
+
+  if (!job_id || !image_index) {
+    return res.status(400).json({ error: 'Missing job_id or image_index' });
+  }
+
+  try {
+    const updateData = {
+      status: status || 'completed',
+      completed_at: new Date()
+    };
+    if (error_message) updateData.error_message = error_message;
+
+    // Stamp status now; the final (composited) URL is written after compositing.
+    const { error } = await supabase
+      .from('inpaint_jobs')
+      .update(updateData)
+      .eq('job_id', job_id)
+      .eq('image_index', String(image_index));
+
+    if (error) {
+      console.error('Inpaint callback update error:', error.message);
+      return res.status(500).json({ error: 'Could not update job' });
+    }
+
+    // On success: composite the raw model output back through the mask so only
+    // the painted region changes, then record that as the new current version.
+    if (inpainted_url) {
+      const { data: ij } = await supabase
+        .from('inpaint_jobs')
+        .select('source_url, mask_url, prompt')
+        .eq('job_id', job_id)
+        .eq('image_index', String(image_index))
+        .maybeSingle();
+
+      let finalUrl = inpainted_url;
+      if (ij && ij.source_url && ij.mask_url) {
+        try {
+          finalUrl = await compositeInpaint(ij.source_url, ij.mask_url, inpainted_url, job_id, image_index);
+        } catch (e) {
+          console.error('Inpaint composite failed, using raw result:', e.message);
+          finalUrl = inpainted_url; // graceful degrade to pure Path A
+        }
+      }
+
+      await supabase
+        .from('inpaint_jobs')
+        .update({ inpainted_url: finalUrl })
+        .eq('job_id', job_id)
+        .eq('image_index', String(image_index));
+
+      const img = await getProjectImageByJob(job_id, image_index);
+      if (img) {
+        await appendVersion(img.id, {
+          url: finalUrl,
+          source: 'inpaint',
+          prompt: ij && ij.prompt ? ij.prompt : null
+        });
+      }
+    }
+
+    console.log(`Inpaint ${status || 'completed'}: ${job_id} image ${image_index}`);
+    return res.status(200).json({ received: true });
+
+  } catch (error) {
+    console.error('Inpaint callback error:', error.message);
+    return res.status(500).json({ error: 'Callback processing failed' });
+  }
+});
+
+// ── Inpaint: Status Check ────────────────────────────────────────────────────
+app.get('/api/inpaint-status', requireAuth, async (req, res) => {
+  const { jobId, imageIndex } = req.query;
+
+  if (!jobId || !imageIndex) {
+    return res.status(400).json({ error: 'Missing jobId or imageIndex' });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('inpaint_jobs')
+      .select('status, inpainted_url, error_message')
+      .eq('job_id', jobId)
+      .eq('image_index', String(imageIndex))
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({
+      status: data.status,
+      inpainted_url: data.inpainted_url || null,
+      error_message: data.error_message || null
+    });
+
+  } catch (error) {
+    console.error('Inpaint status check error:', error.message);
     return res.status(500).json({ error: 'Status check failed' });
   }
 });
