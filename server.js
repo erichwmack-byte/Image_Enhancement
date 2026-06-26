@@ -333,35 +333,68 @@ app.post('/api/enhance', requireAuth, upload.array('images'), async (req, res) =
       return res.status(500).json({ error: 'Could not create project images' });
     }
 
-    // 4. Forward S3 URLs (not binaries) to n8n.
-    const n8nUrl = `${N8N_BASE_URL}/webhook/Batch_EnhancementOptionsWeb`;
-    const response = await axios.post(n8nUrl, {
-      job_id: jobId,
-      back_plane: req.body.back_plane || '',
-      time_of_day: req.body.time_of_day || '',
-      paver_style: req.body.paver_style || '',
-      paver_pattern: req.body.paver_pattern || '',
-      image_quality: req.body.image_quality || '',
-      user_email: req.user.email || '',
-      user_id: req.user.id || '',
-      images: uploads.map(u => ({
-        image_index: String(u.index),
-        raw_upload_url: u.rawUploadUrl
-      }))
-    }, {
-      headers: { 'Content-Type': 'application/json' }
+    // 4. Fan out ONE concurrent n8n call per image to the single-image Enhance
+    //    workflow (replaces the old serial Batch loop). Each call returns fast —
+    //    the workflow ACKs immediately after Set Variables, then processes async
+    //    and writes back per image via /api/project-image-update (which in turn
+    //    auto-fires heal). Concurrency here is the parallelism win over the loop.
+    const n8nUrl = `${N8N_BASE_URL}/webhook/enhance_image`;
+    const dispatch = await Promise.allSettled(
+      uploads.map(u =>
+        axios.post(n8nUrl, {
+          job_id: jobId,
+          image_index: String(u.index),
+          raw_upload_url: u.rawUploadUrl,
+          back_plane: req.body.back_plane || '',
+          time_of_day: req.body.time_of_day || '',
+          paver_style: req.body.paver_style || '',
+          paver_pattern: req.body.paver_pattern || '',
+          image_quality: req.body.image_quality || '',
+          user_email: req.user.email || '',
+          user_id: req.user.id || ''
+        }, {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 20000
+        })
+      )
+    );
+
+    // Identify any images n8n never accepted so we don't leave the dashboard
+    // spinner polling a row that will never get a callback.
+    const failedIdx = [];
+    dispatch.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        failedIdx.push(uploads[i].index);
+        console.error(
+          `Enhance dispatch failed for image ${uploads[i].index}:`,
+          r.reason?.response?.data || r.reason?.message
+        );
+      }
     });
 
-    const responseData = response.data;
-    if (!responseData.jobId && !responseData.job_id) {
-      console.warn('Warning: n8n responded without a jobId.');
+    if (failedIdx.length) {
+      await Promise.allSettled(
+        failedIdx.map(idx =>
+          supabase
+            .from('project_images')
+            .update({ status: 'error', error_message: 'Enhance dispatch failed' })
+            .eq('project_id', projectRow.id)
+            .eq('image_index', String(idx))
+        )
+      );
+    }
+
+    // Only a hard failure if NOTHING was accepted.
+    if (failedIdx.length === uploads.length) {
+      return res.status(502).json({ error: 'Enhancement dispatch failed for all images' });
     }
 
     return res.status(200).json({
       jobId: jobId,
       albumId: albumId,
       status: 'pending',
-      ...responseData
+      dispatched: uploads.length - failedIdx.length,
+      failed: failedIdx.length
     });
 
   } catch (error) {
@@ -998,7 +1031,7 @@ app.get('/api/gallery', requireAuth, async (req, res) => {
   try {
     const { data: project, error: pErr } = await supabase
       .from('projects')
-      .select('id, job_id, project_name, status, brief_text, logo_url')
+      .select('id, job_id, project_name, status, logo_url')
       .eq('job_id', jobId)
       .eq('user_id', req.user.id)
       .single();
@@ -1032,7 +1065,6 @@ app.get('/api/gallery', requireAuth, async (req, res) => {
         jobId: project.job_id,
         projectName: project.project_name,
         status: project.status,
-        briefText: project.brief_text || '',
         logoUrl: project.logo_url || null,
         totalItems: (images || []).length,
         successCount: completed
