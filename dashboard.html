@@ -299,6 +299,7 @@
     <span class="spacer"></span>
     <span class="credits">⚡ <b id="creditCount">—</b> credits</span>
     <a class="ghost-btn" href="/">＋ New design</a>
+    <button class="ghost-btn" id="trashBtn">🗑 Trash</button>
     <button class="ghost-btn" id="signOut">Sign out</button>
   </header>
 
@@ -327,6 +328,18 @@
         <button class="ghost-btn" id="renameBtn">Rename</button>
       </div>
       <div id="cardGrid" class="card-grid"></div>
+    </section>
+
+    <!-- Trash view -->
+    <section id="trashView" class="hidden">
+      <a class="back" id="trashBack">‹ All albums</a>
+      <div class="page-head">
+        <div>
+          <h1>Trash</h1>
+          <p>Deleted designs are kept for 30 days, then permanently removed.</p>
+        </div>
+      </div>
+      <div id="trashGrid" class="album-grid"></div>
     </section>
   </main>
 
@@ -463,6 +476,7 @@ async function openAlbum(a){
   if(albumPollTimer){ clearTimeout(albumPollTimer); albumPollTimer=null; }
   current={albumId:a.albumId,name:a.name,images:[]};
   $('#albumsView').classList.add('hidden');
+  $('#trashView').classList.add('hidden');
   $('#albumView').classList.remove('hidden');
   $('#albumTitle').textContent=a.name||'Album';
   $('#albumMeta').textContent='Loading…';
@@ -518,6 +532,7 @@ function buildCard(img){
     '<div class="card-body">'+
       '<div class="card-title-row"><h4>Design '+num+'</h4>'+
         '<span class="heal-hint hidden" data-heal-hint>Generating alternate…</span>'+
+        '<button class="btn icon" data-delete title="Move to Trash">🗑</button>'+
         '<button class="btn icon" data-compare>⇋ Compare</button></div>'+
       '<div class="divider"></div>'+
       '<div class="tool">'+
@@ -542,6 +557,7 @@ function buildCard(img){
   const stage=card.querySelector('[data-stage]');
   card.querySelector('.expand').addEventListener('click',()=>openLightbox(card.querySelector('[data-main]').src));
   card.querySelector('[data-compare]').addEventListener('click',()=>openCompareModal(card,img));
+  card.querySelector('[data-delete]').addEventListener('click',()=>deleteImage(card,img));
   card.querySelector('[data-refine]').addEventListener('click',e=>refine(card,img,e.currentTarget));
   card.querySelector('[data-upscale]').addEventListener('click',e=>upscale(card,img,e.currentTarget));
   card.querySelector('[data-inpaint]').addEventListener('click',()=>openInpaintModal(card,img));
@@ -932,6 +948,51 @@ $('#ipClose').addEventListener('click',closeInpaintModal);
 $('#ipCancel').addEventListener('click',closeInpaintModal);
 $('#ipModal').addEventListener('click',e=>{ if(e.target.id==='ipModal') closeInpaintModal(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape' && $('#ipModal').classList.contains('open')) closeInpaintModal(); });
+
+/* ── Trash: soft delete + restore (30-day purge runs server-side via cron) ── */
+async function deleteImage(card,img){
+  if(!confirm('Move this design to Trash? You can restore it within 30 days.')) return;
+  try{
+    await api('/api/image/delete',{method:'POST',body:{projectImageId:img.projectImageId}});
+    card.remove(); delete imgState[img.projectImageId];
+    toast('Moved to Trash');
+    const grid=$('#cardGrid');
+    if(grid && !grid.querySelector('.card')){ grid.innerHTML='<div class="empty"><h2>No images</h2></div>'; }
+  }catch(e){ toast(e.message,true); }
+}
+async function openTrash(){
+  $('#albumsView').classList.add('hidden');
+  $('#albumView').classList.add('hidden');
+  $('#trashView').classList.remove('hidden');
+  window.scrollTo({top:0,behavior:'smooth'});
+  const grid=$('#trashGrid'); grid.innerHTML='<div class="skeleton"></div><div class="skeleton"></div>';
+  try{
+    const d=await api('/api/trash'); const imgs=d.images||[];
+    grid.innerHTML='';
+    if(!imgs.length){ grid.innerHTML='<div class="empty"><h2>Trash is empty</h2></div>'; return; }
+    imgs.forEach(im=>{
+      const days=Math.max(0,30-Math.floor((Date.now()-new Date(im.deleted_at).getTime())/86400000));
+      const tile=el('div','tile');
+      tile.innerHTML=
+        '<div class="tile-cover"><img src="'+esc(im.thumb||'')+'" alt=""><div class="tile-scrim"></div></div>'+
+        '<div style="padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px">'+
+          '<div><div style="font-weight:600">'+esc(im.albumName)+'</div>'+
+          '<div class="muted" style="font-size:12px">Removed in '+days+' day'+(days===1?'':'s')+'</div></div>'+
+          '<button class="ghost-btn" data-restore>Restore</button>'+
+        '</div>';
+      tile.querySelector('[data-restore]').addEventListener('click',async()=>{
+        try{
+          await api('/api/image/restore',{method:'POST',body:{projectImageId:im.projectImageId}});
+          tile.remove(); toast('Restored');
+          if(!grid.querySelector('.tile')){ grid.innerHTML='<div class="empty"><h2>Trash is empty</h2></div>'; }
+        }catch(e){ toast(e.message,true); }
+      });
+      grid.appendChild(tile);
+    });
+  }catch(e){ grid.innerHTML='<div class="empty"><h2>Could not load Trash</h2></div>'; }
+}
+$('#trashBtn').addEventListener('click',openTrash);
+$('#trashBack').addEventListener('click',()=>{ $('#trashView').classList.add('hidden'); $('#albumsView').classList.remove('hidden'); loadAlbums(); });
 
 /* ── Lightbox ── */
 function openLightbox(src){ $('#lightboxImg').src=src; $('#lightbox').classList.add('open'); }
