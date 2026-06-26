@@ -1830,7 +1830,10 @@ async function compositeLogoOnImage(baseUrl, placement, jobId, imageIndex) {
   const opacity = Math.min(Math.max(placement.opacity == null ? 1 : n(placement.opacity), 0), 1);
   const logoW = Math.max(1, Math.round(wFrac * W));
 
-  let pipe = sharp(logoBuf).resize({ width: logoW }).ensureAlpha();
+  // Fit the logo INSIDE the base in both dimensions (preserve aspect). Without the
+  // height cap, a tall logo or a large drag can exceed the base height and sharp
+  // throws ("image to composite must be same size or smaller").
+  let pipe = sharp(logoBuf).resize({ width: logoW, height: H, fit: 'inside' }).ensureAlpha();
   if (opacity < 1) pipe = pipe.linear([1, 1, 1, opacity], [0, 0, 0, 0]); // scale alpha only
   const logoPng = await pipe.png().toBuffer();
   const lmeta = await sharp(logoPng).metadata();
