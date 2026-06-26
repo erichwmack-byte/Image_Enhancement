@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -252,6 +253,27 @@
   .cmp-modal-actions .btn.active{background:var(--aqua);color:#04222b;border-color:transparent}
   @media (max-width:560px){ .cmp-stage-wrap{aspect-ratio:1/1} .cmp-modal-actions{flex-direction:column} }
 
+  /* inpaint modal (mask editor) */
+  .ip-modal{position:fixed;inset:0;z-index:66;background:rgba(3,9,15,.93);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    display:none;align-items:center;justify-content:center;padding:24px}
+  .ip-modal.open{display:flex}
+  .ip-modal-inner{width:min(1100px,96vw);max-height:94vh;overflow:auto;display:flex;flex-direction:column;gap:14px}
+  .ip-head{display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:600;color:var(--text-muted);gap:12px}
+  .ip-close{width:36px;height:36px;border-radius:10px;background:var(--surface);border:1px solid var(--hairline);color:var(--text);font-size:15px;flex:none}
+  .ip-close:hover{background:var(--surface-2)}
+  .ip-stage{position:relative;align-self:center;max-width:100%;line-height:0;border-radius:16px;overflow:hidden;background:var(--bg-2);box-shadow:var(--shadow-hi)}
+  .ip-stage img{display:block;max-width:100%;max-height:64vh;width:auto;height:auto;user-select:none;-webkit-user-drag:none}
+  .ip-stage canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:none}
+  .ip-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .ip-tools .btn.active{background:var(--aqua);color:#04222b;border-color:transparent}
+  .ip-size{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted)}
+  .ip-size input{width:140px}
+  .ip-hint{font-size:12px;color:var(--text-dim);margin-left:auto}
+  .ip-actions{display:flex;gap:12px}
+  .ip-actions .btn{flex:1;padding:14px;font-size:14px}
+  @media (max-width:560px){ .ip-hint{display:none} .ip-actions{flex-direction:column} }
+
   /* toast */
   .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);
     z-index:70;padding:12px 20px;border-radius:14px;font-size:14px;font-weight:600;
@@ -324,6 +346,31 @@
     </div>
   </div>
   <div class="toast" id="toast"></div>
+
+  <div class="ip-modal" id="ipModal">
+    <div class="ip-modal-inner">
+      <div class="ip-head">
+        <span>Inpaint — paint over the area to fix, then describe the correction</span>
+        <button class="ip-close" id="ipClose" aria-label="Close">✕</button>
+      </div>
+      <div class="ip-stage" id="ipStage">
+        <img id="ipImg" alt="">
+        <canvas id="ipView"></canvas>
+      </div>
+      <div class="ip-tools">
+        <button class="btn active" id="ipBrush" data-mode="brush">🖌 Brush</button>
+        <button class="btn" id="ipEraser" data-mode="eraser">🩹 Eraser</button>
+        <label class="ip-size">Size <input type="range" id="ipSize" min="6" max="140" value="40"></label>
+        <button class="btn" id="ipClear">Clear mask</button>
+        <span class="ip-hint">Only the painted area changes — everything else is preserved exactly.</span>
+      </div>
+      <textarea id="ipPrompt" class="refine-in" rows="2" placeholder="Describe the fix for the painted area — e.g. replace with smooth travertine pavers, matching the surrounding shadows"></textarea>
+      <div class="ip-actions">
+        <button class="btn" id="ipCancel">Cancel</button>
+        <button class="btn primary" id="ipGo">Generate inpaint</button>
+      </div>
+    </div>
+  </div>
 
 <script>
 "use strict";
@@ -480,6 +527,7 @@ function buildCard(img){
       '<div class="history" data-history></div>'+
       '<div class="btn-row">'+
         '<button class="btn wide" data-upscale>⬆ Upscale to 4K</button>'+
+        '<button class="btn" data-inpaint>✎ Inpaint</button>'+
         '<button class="btn" data-download>⬇ Download</button>'+
         '<button class="btn icon" data-pin title="Share to Pinterest">📌</button>'+
         '<button class="btn icon" data-fb title="Share to Facebook">f</button>'+
@@ -496,6 +544,7 @@ function buildCard(img){
   card.querySelector('[data-compare]').addEventListener('click',()=>openCompareModal(card,img));
   card.querySelector('[data-refine]').addEventListener('click',e=>refine(card,img,e.currentTarget));
   card.querySelector('[data-upscale]').addEventListener('click',e=>upscale(card,img,e.currentTarget));
+  card.querySelector('[data-inpaint]').addEventListener('click',()=>openInpaintModal(card,img));
   card.querySelector('[data-download]').addEventListener('click',()=>download(card.querySelector('[data-main]').src,'design-'+num+'.jpg'));
   card.querySelector('[data-pin]').addEventListener('click',()=>window.open('https://pinterest.com/pin/create/button/?media='+encodeURIComponent(card.querySelector('[data-main]').src),'_blank'));
   card.querySelector('[data-fb]').addEventListener('click',()=>window.open('https://www.facebook.com/sharer/sharer.php?u='+encodeURIComponent(card.querySelector('[data-main]').src),'_blank'));
@@ -665,7 +714,7 @@ function pollStatus(base,jobId,imageIndex,urlKey,onDone,onFail){
     try{
       const d=await api(base+'?jobId='+encodeURIComponent(jobId)+'&imageIndex='+encodeURIComponent(String(imageIndex)));
       if(d.status==='completed'&&d[urlKey]){ onDone(); return; }
-      if(d.status==='failed'){ toast('Operation failed: '+(d.error_message||'unknown'),true); onFail&&onFail(); return; }
+      if(d.status==='failed'||d.status==='error'){ toast('Operation failed: '+(d.error_message||'unknown'),true); onFail&&onFail(); return; }
     }catch(e){}
     if(n>=max){ toast('Still working — check back shortly',true); onFail&&onFail(); return; }
     setTimeout(tick,2000);
@@ -770,6 +819,108 @@ async function download(url,name){
     setTimeout(()=>URL.revokeObjectURL(u),1500);
   }catch(e){ window.open(url,'_blank'); }
 }
+
+/* ── Inpaint (roomy modal mask editor → Path A + server-side composite) ──
+   The S3 image is a plain <img> backdrop; the canvas on top only ever holds the
+   user's own mask strokes, so toDataURL() is never tainted (no S3 CORS needed).
+   We keep a visible aqua overlay + a hidden white-on-black mask in lockstep, and
+   export the mask as a PNG to /api/inpaint. */
+let ipState={card:null,img:null,view:null,mask:null,drawing:false,mode:'brush',last:null,painted:false};
+
+function openInpaintModal(card,img){
+  const latest=imgState[img.projectImageId]||img;
+  ipState.card=card; ipState.img=latest; ipState.painted=false; ipState.last=null;
+  setIpMode('brush');
+  $('#ipPrompt').value='';
+  const im=$('#ipImg');
+  im.onload=()=>ipSetupCanvas(im);
+  im.src=card.querySelector('[data-main]').src;
+  $('#ipModal').classList.add('open');
+}
+function closeInpaintModal(){
+  $('#ipModal').classList.remove('open');
+  ipState.drawing=false; ipState.last=null; ipState.painted=false;
+}
+function ipSetupCanvas(im){
+  const W=im.naturalWidth||im.width, H=im.naturalHeight||im.height;
+  const view=$('#ipView'); view.width=W; view.height=H;
+  view.getContext('2d').clearRect(0,0,W,H);
+  const mask=document.createElement('canvas'); mask.width=W; mask.height=H;
+  const mctx=mask.getContext('2d'); mctx.fillStyle='#000'; mctx.fillRect(0,0,W,H);
+  ipState.view=view; ipState.mask=mask; ipState.painted=false;
+}
+function setIpMode(mode){
+  ipState.mode=mode;
+  $('#ipBrush').classList.toggle('active',mode==='brush');
+  $('#ipEraser').classList.toggle('active',mode==='eraser');
+}
+function ipClearMask(){
+  if(!ipState.view||!ipState.mask) return;
+  const W=ipState.view.width, H=ipState.view.height;
+  ipState.view.getContext('2d').clearRect(0,0,W,H);
+  const mctx=ipState.mask.getContext('2d'); mctx.fillStyle='#000'; mctx.fillRect(0,0,W,H);
+  ipState.painted=false;
+}
+function ipPos(e){
+  const v=ipState.view, r=v.getBoundingClientRect();
+  const sx=v.width/r.width, sy=v.height/r.height;
+  return { x:(e.clientX-r.left)*sx, y:(e.clientY-r.top)*sy, scale:sx };
+}
+function ipStroke(p){
+  if(!ipState.view||!ipState.mask) return;
+  const lw=Math.max(1,(+$('#ipSize').value)*p.scale);
+  const erase=ipState.mode==='eraser';
+  const from=ipState.last||p;
+  // visible aqua overlay
+  const v=ipState.view.getContext('2d');
+  v.lineCap='round'; v.lineJoin='round'; v.lineWidth=lw;
+  v.globalCompositeOperation=erase?'destination-out':'source-over';
+  v.strokeStyle=erase?'rgba(0,0,0,1)':'rgba(0,194,199,.5)';
+  v.fillStyle=v.strokeStyle;
+  v.beginPath(); v.moveTo(from.x,from.y); v.lineTo(p.x,p.y); v.stroke();
+  v.beginPath(); v.arc(p.x,p.y,lw/2,0,Math.PI*2); v.fill();
+  // hidden white-on-black mask (source of truth)
+  const m=ipState.mask.getContext('2d');
+  m.lineCap='round'; m.lineJoin='round'; m.lineWidth=lw;
+  m.globalCompositeOperation='source-over';
+  m.strokeStyle=erase?'#000':'#fff'; m.fillStyle=m.strokeStyle;
+  m.beginPath(); m.moveTo(from.x,from.y); m.lineTo(p.x,p.y); m.stroke();
+  m.beginPath(); m.arc(p.x,p.y,lw/2,0,Math.PI*2); m.fill();
+  v.globalCompositeOperation='source-over';
+  ipState.last=p;
+  if(!erase) ipState.painted=true;
+}
+async function runInpaint(){
+  if(!ipState.painted){ toast('Paint over the area to fix first',true); return; }
+  const prompt=$('#ipPrompt').value.trim();
+  if(!prompt){ toast('Describe the correction first',true); return; }
+  const img=ipState.img, card=ipState.card;
+  const maskData=ipState.mask.toDataURL('image/png');
+  const src=card.querySelector('[data-main]').src;
+  const go=$('#ipGo'); go.disabled=true; go.textContent='Starting…';
+  try{
+    await api('/api/inpaint',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt,maskData}});
+    go.textContent='Generating…';
+    pollStatus('/api/inpaint-status',img.jobId,img.image_index,'inpainted_url',async()=>{
+      go.disabled=false; go.textContent='Generate inpaint';
+      closeInpaintModal();
+      await refreshImage(img.projectImageId);
+      toast('Inpaint saved as a new version');
+    },()=>{ go.disabled=false; go.textContent='Generate inpaint'; });
+  }catch(e){ go.disabled=false; go.textContent='Generate inpaint'; toast(e.message,true); }
+}
+// wire modal controls once
+$('#ipView').addEventListener('pointerdown',e=>{ ipState.drawing=true; ipState.last=null; ipStroke(ipPos(e)); e.preventDefault(); });
+window.addEventListener('pointermove',e=>{ if(ipState.drawing) ipStroke(ipPos(e)); });
+window.addEventListener('pointerup',()=>{ ipState.drawing=false; ipState.last=null; });
+$('#ipBrush').addEventListener('click',()=>setIpMode('brush'));
+$('#ipEraser').addEventListener('click',()=>setIpMode('eraser'));
+$('#ipClear').addEventListener('click',ipClearMask);
+$('#ipGo').addEventListener('click',runInpaint);
+$('#ipClose').addEventListener('click',closeInpaintModal);
+$('#ipCancel').addEventListener('click',closeInpaintModal);
+$('#ipModal').addEventListener('click',e=>{ if(e.target.id==='ipModal') closeInpaintModal(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape' && $('#ipModal').classList.contains('open')) closeInpaintModal(); });
 
 /* ── Lightbox ── */
 function openLightbox(src){ $('#lightboxImg').src=src; $('#lightbox').classList.add('open'); }
