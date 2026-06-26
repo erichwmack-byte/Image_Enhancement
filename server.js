@@ -1500,7 +1500,7 @@ app.get('/api/album/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
   try {
     const { data: album } = await supabase
-      .from('albums').select('id, name, user_id, created_at').eq('id', id).single();
+      .from('albums').select('id, name, user_id, created_at, logo_placement').eq('id', id).single();
     if (!album || album.user_id !== req.user.id) return res.status(404).json({ error: 'Album not found' });
 
     const { data: projects } = await supabase
@@ -1514,7 +1514,7 @@ app.get('/api/album/:id', requireAuth, async (req, res) => {
     if (projIds.length) {
       const { data: imgs } = await supabase
         .from('project_images')
-        .select('id, project_id, image_index, image_name, original_url, enhanced_url, healed_url, current_url, active_version_id, upscaled_url, resolution_badge, status')
+        .select('id, project_id, image_index, image_name, original_url, enhanced_url, healed_url, current_url, active_version_id, upscaled_url, resolution_badge, status, logo_placement')
         .in('project_id', projIds).is('deleted_at', null);
 
       const ids = (imgs || []).map(function (i) { return i.id; });
@@ -1548,12 +1548,13 @@ app.get('/api/album/:id', requireAuth, async (req, res) => {
           upscaled_url: i.upscaled_url,
           resolution_badge: i.resolution_badge,
           status: i.status,
+          logoOverride: i.logo_placement || null,
           versions: versionsByImage[i.id] || []
         };
       });
     }
     return res.status(200).json({
-      album: { albumId: album.id, name: album.name, createdAt: album.created_at, totalItems: images.length },
+      album: { albumId: album.id, name: album.name, createdAt: album.created_at, totalItems: images.length, logoDefault: album.logo_placement || null },
       images: images
     });
   } catch (e) {
@@ -1757,6 +1758,187 @@ app.post('/api/logos/delete', requireAuth, async (req, res) => {
   } catch (e) {
     console.error('logo delete error:', e.message);
     return res.status(500).json({ error: 'Delete failed' });
+  }
+});
+
+// ── Logo placement: composite + stamp/remove helpers ────────────────────────
+function n(v) { const x = Number(v); return isFinite(x) ? x : 0; }
+
+// Deterministic overlay (NOT generative): stamp the logo PNG onto the base at a
+// fractional position/size/opacity. Respects the logo's own transparency.
+async function compositeLogoOnImage(baseUrl, placement, jobId, imageIndex) {
+  const [baseRes, logoRes] = await Promise.all([
+    axios.get(baseUrl, { responseType: 'arraybuffer' }),
+    axios.get(placement.logoUrl, { responseType: 'arraybuffer' })
+  ]);
+  const baseBuf = Buffer.from(baseRes.data);
+  const logoBuf = Buffer.from(logoRes.data);
+  const meta = await sharp(baseBuf).metadata();
+  const W = meta.width, H = meta.height;
+
+  const wFrac = Math.min(Math.max(n(placement.w) || 0.18, 0.02), 1);
+  const opacity = Math.min(Math.max(placement.opacity == null ? 1 : n(placement.opacity), 0), 1);
+  const logoW = Math.max(1, Math.round(wFrac * W));
+
+  let pipe = sharp(logoBuf).resize({ width: logoW }).ensureAlpha();
+  if (opacity < 1) pipe = pipe.linear([1, 1, 1, opacity], [0, 0, 0, 0]); // scale alpha only
+  const logoPng = await pipe.png().toBuffer();
+  const lmeta = await sharp(logoPng).metadata();
+
+  let left = Math.round(n(placement.x) * W);
+  let top = Math.round(n(placement.y) * H);
+  left = Math.min(Math.max(left, 0), Math.max(0, W - lmeta.width));
+  top = Math.min(Math.max(top, 0), Math.max(0, H - lmeta.height));
+
+  const out = await sharp(baseBuf)
+    .composite([{ input: logoPng, top: top, left: left }])
+    .jpeg({ quality: 95 })
+    .toBuffer();
+  const key = `${jobId}_logo_${imageIndex}_${Date.now()}.jpg`;
+  return await uploadBufferToS3(out, key, 'image/jpeg');
+}
+
+// Latest non-logo version url (the clean image), else a fallback.
+async function cleanBaseUrl(projectImageId, fallbackUrl) {
+  const { data: versions } = await supabase
+    .from('project_image_versions')
+    .select('url, source, seq')
+    .eq('project_image_id', projectImageId)
+    .order('seq', { ascending: false });
+  const clean = (versions || []).find(function (v) { return v.source !== 'logo'; });
+  return clean ? clean.url : fallbackUrl;
+}
+
+// Stamp (or re-stamp) the logo onto one image. Always composites from the clean
+// base so re-positioning never stacks. Keeps a single source='logo' version.
+async function stampLogoOnImage(image, jobId, placement) {
+  let base = image.logo_base_url;
+  if (!base) base = await cleanBaseUrl(image.id, image.current_url || image.enhanced_url);
+  if (!base) return;
+
+  const brandedUrl = await compositeLogoOnImage(base, placement, jobId || 'job', image.image_index);
+
+  const { data: existing } = await supabase
+    .from('project_image_versions')
+    .select('id').eq('project_image_id', image.id).eq('source', 'logo').maybeSingle();
+
+  let versionId;
+  if (existing) {
+    await supabase.from('project_image_versions').update({ url: brandedUrl }).eq('id', existing.id);
+    versionId = existing.id;
+  } else {
+    const { data: last } = await supabase
+      .from('project_image_versions').select('seq')
+      .eq('project_image_id', image.id).order('seq', { ascending: false }).limit(1).maybeSingle();
+    const nextSeq = (last && last.seq ? last.seq : 0) + 1;
+    const { data: v } = await supabase
+      .from('project_image_versions')
+      .insert({ project_image_id: image.id, url: brandedUrl, source: 'logo', seq: nextSeq })
+      .select('id').single();
+    versionId = v.id;
+  }
+  await supabase.from('project_images')
+    .update({ current_url: brandedUrl, active_version_id: versionId, logo_base_url: base })
+    .eq('id', image.id);
+}
+
+// Remove the logo from one image: drop the logo version, revert to clean base.
+async function removeLogoFromImage(image) {
+  await supabase.from('project_image_versions')
+    .delete().eq('project_image_id', image.id).eq('source', 'logo');
+  const base = image.logo_base_url || await cleanBaseUrl(image.id, image.current_url || image.enhanced_url);
+  const { data: remaining } = await supabase
+    .from('project_image_versions').select('id, seq')
+    .eq('project_image_id', image.id).order('seq', { ascending: false }).limit(1).maybeSingle();
+  await supabase.from('project_images')
+    .update({ current_url: base, active_version_id: remaining ? remaining.id : null, logo_base_url: null, logo_placement: null })
+    .eq('id', image.id);
+}
+
+// ── Logo: set the ALBUM DEFAULT placement (restamps non-override images) ──────
+app.post('/api/album/:id/logo', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { logoId, placement } = req.body || {};
+  if (!logoId || !placement) return res.status(400).json({ error: 'Missing logoId or placement' });
+  try {
+    const { data: album } = await supabase.from('albums').select('id, user_id').eq('id', id).maybeSingle();
+    if (!album || album.user_id !== req.user.id) return res.status(404).json({ error: 'Album not found' });
+    const { data: logo } = await supabase.from('logos').select('id, user_id, image_url').eq('id', logoId).maybeSingle();
+    if (!logo || logo.user_id !== req.user.id) return res.status(404).json({ error: 'Logo not found' });
+
+    const full = { logoUrl: logo.image_url, x: n(placement.x), y: n(placement.y), w: n(placement.w), opacity: placement.opacity == null ? 1 : n(placement.opacity) };
+    await supabase.from('albums').update({ logo_placement: full }).eq('id', id);
+
+    const { data: projects } = await supabase.from('projects').select('id, job_id').eq('album_id', id);
+    const projIds = (projects || []).map(function (p) { return p.id; });
+    const jobByProj = {}; (projects || []).forEach(function (p) { jobByProj[p.id] = p.job_id; });
+    if (projIds.length) {
+      const { data: imgs } = await supabase.from('project_images')
+        .select('id, project_id, image_index, current_url, enhanced_url, logo_base_url, logo_placement')
+        .in('project_id', projIds).is('deleted_at', null);
+      const targets = (imgs || []).filter(function (im) { return !im.logo_placement; }); // overrides keep theirs
+      await Promise.all(targets.map(function (im) { return stampLogoOnImage(im, jobByProj[im.project_id], full); }));
+    }
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error('album logo error:', e.message);
+    return res.status(500).json({ error: 'Could not apply album logo' });
+  }
+});
+
+// ── Logo: set a PER-IMAGE OVERRIDE placement (restamps that image) ────────────
+app.post('/api/image/:id/logo', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { logoId, placement } = req.body || {};
+  if (!placement) return res.status(400).json({ error: 'Missing placement' });
+  try {
+    const { data: image } = await supabase
+      .from('project_images')
+      .select('id, project_id, image_index, current_url, enhanced_url, logo_base_url, projects!inner(user_id, job_id, album_id)')
+      .eq('id', id).maybeSingle();
+    if (!image || !image.projects || image.projects.user_id !== req.user.id) return res.status(404).json({ error: 'Image not found' });
+
+    let logoUrl;
+    if (logoId) {
+      const { data: logo } = await supabase.from('logos').select('id, user_id, image_url').eq('id', logoId).maybeSingle();
+      if (!logo || logo.user_id !== req.user.id) return res.status(404).json({ error: 'Logo not found' });
+      logoUrl = logo.image_url;
+    } else {
+      const { data: album } = await supabase.from('albums').select('logo_placement').eq('id', image.projects.album_id).maybeSingle();
+      logoUrl = album && album.logo_placement ? album.logo_placement.logoUrl : null;
+      if (!logoUrl) return res.status(400).json({ error: 'No logo selected' });
+    }
+
+    const full = { logoUrl: logoUrl, x: n(placement.x), y: n(placement.y), w: n(placement.w), opacity: placement.opacity == null ? 1 : n(placement.opacity) };
+    await supabase.from('project_images').update({ logo_placement: full }).eq('id', id);
+    await stampLogoOnImage(image, image.projects.job_id, full);
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error('image logo error:', e.message);
+    return res.status(500).json({ error: 'Could not apply logo' });
+  }
+});
+
+// ── Logo: remove from the whole album (revert every image to its clean base) ──
+app.post('/api/album/:id/logo/remove', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { data: album } = await supabase.from('albums').select('id, user_id').eq('id', id).maybeSingle();
+    if (!album || album.user_id !== req.user.id) return res.status(404).json({ error: 'Album not found' });
+    await supabase.from('albums').update({ logo_placement: null }).eq('id', id);
+
+    const { data: projects } = await supabase.from('projects').select('id').eq('album_id', id);
+    const projIds = (projects || []).map(function (p) { return p.id; });
+    if (projIds.length) {
+      const { data: imgs } = await supabase.from('project_images')
+        .select('id, current_url, enhanced_url, logo_base_url')
+        .in('project_id', projIds).is('deleted_at', null);
+      await Promise.all((imgs || []).map(function (im) { return removeLogoFromImage(im); }));
+    }
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error('album logo remove error:', e.message);
+    return res.status(500).json({ error: 'Could not remove logo' });
   }
 });
 
