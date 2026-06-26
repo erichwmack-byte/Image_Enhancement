@@ -295,6 +295,17 @@
   .ip-actions .btn{flex:1;padding:14px;font-size:14px}
   @media (max-width:560px){ .ip-hint{display:none} .ip-actions{flex-direction:column} }
 
+  /* logo placement modal (reuses .ip-modal shell) */
+  .lg-box{position:absolute;border:1.5px dashed rgba(0,194,199,.95);cursor:move;touch-action:none;box-sizing:border-box;display:none}
+  .lg-box img{width:100%;height:100%;object-fit:contain;pointer-events:none;display:block}
+  .lg-resize{position:absolute;right:-8px;bottom:-8px;width:17px;height:17px;border-radius:50%;background:var(--aqua);border:2px solid #06101A;cursor:nwse-resize}
+  .lg-pickrow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;min-height:54px}
+  .lg-swatch{width:54px;height:54px;border-radius:10px;overflow:hidden;border:2px solid var(--hairline);cursor:pointer;
+    background:repeating-conic-gradient(#16242f 0 25%,#0f1c26 0 50%) 50%/14px 14px;display:flex;align-items:center;justify-content:center}
+  .lg-swatch.active{border-color:var(--aqua)}
+  .lg-swatch img{max-width:80%;max-height:80%;object-fit:contain}
+  .lg-pick-empty{font-size:13px;color:var(--text-muted)}
+
   /* toast */
   .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);
     z-index:70;padding:12px 20px;border-radius:14px;font-size:14px;font-weight:600;
@@ -428,6 +439,29 @@
     </div>
   </div>
 
+  <div class="ip-modal" id="lgModal">
+    <div class="ip-modal-inner">
+      <div class="ip-head">
+        <span>Logo — drag to position, drag the corner to resize</span>
+        <button class="ip-close" id="lgClose" aria-label="Close">✕</button>
+      </div>
+      <div class="ip-stage" id="lgStage">
+        <img id="lgImg" alt="">
+        <div class="lg-box" id="lgBox"><img id="lgBoxImg" alt=""><span class="lg-resize" id="lgResize"></span></div>
+      </div>
+      <div class="lg-pickrow" id="lgPick"></div>
+      <div class="ip-tools">
+        <label class="ip-size">Opacity <input type="range" id="lgOpacity" min="10" max="100" value="100"></label>
+        <span class="ip-hint">Transparent PNG works best. Apply to the whole album or just this image.</span>
+      </div>
+      <div class="ip-actions">
+        <button class="btn" id="lgRemove">Remove logo</button>
+        <button class="btn" id="lgApplyOne">Apply to this image</button>
+        <button class="btn primary" id="lgApplyAll">Set as album default</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 "use strict";
 const TOKEN = localStorage.getItem('authToken');
@@ -529,6 +563,7 @@ async function openAlbum(a){
   try{
     const d=await api('/api/album/'+encodeURIComponent(a.albumId));
     current.images=d.images||[];
+    current.logoDefault=d.album?d.album.logoDefault:null;
     if(d.album&&d.album.name){ current.name=d.album.name; $('#albumTitle').textContent=d.album.name; }
     $('#albumMeta').textContent=(d.album?d.album.totalItems+' images':current.images.length+' images');
     const grid=$('#cardGrid'); grid.innerHTML='';
@@ -587,6 +622,7 @@ function buildCard(img){
       '<div class="btn-row">'+
         '<button class="btn wide" data-upscale>⬆ Upscale to 4K</button>'+
         '<button class="btn" data-inpaint>✎ Inpaint</button>'+
+        '<button class="btn" data-logo>🏷 Logo</button>'+
         '<button class="btn" data-download>⬇ Download</button>'+
         '<button class="btn icon" data-pin title="Share to Pinterest">📌</button>'+
         '<button class="btn icon" data-fb title="Share to Facebook">f</button>'+
@@ -605,6 +641,7 @@ function buildCard(img){
   card.querySelector('[data-refine]').addEventListener('click',e=>refine(card,img,e.currentTarget));
   card.querySelector('[data-upscale]').addEventListener('click',e=>upscale(card,img,e.currentTarget));
   card.querySelector('[data-inpaint]').addEventListener('click',()=>openInpaintModal(card,img));
+  card.querySelector('[data-logo]').addEventListener('click',()=>openLogoModal(card,img));
   card.querySelector('[data-download]').addEventListener('click',()=>download(card.querySelector('[data-main]').src,'design-'+num+'.jpg'));
   card.querySelector('[data-pin]').addEventListener('click',()=>window.open('https://pinterest.com/pin/create/button/?media='+encodeURIComponent(card.querySelector('[data-main]').src),'_blank'));
   card.querySelector('[data-fb]').addEventListener('click',()=>window.open('https://www.facebook.com/sharer/sharer.php?u='+encodeURIComponent(card.querySelector('[data-main]').src),'_blank'));
@@ -1104,6 +1141,123 @@ async function openTrash(){
 }
 $('#trashBtn').addEventListener('click',openTrash);
 $('#trashBack').addEventListener('click',()=>{ $('#trashView').classList.add('hidden'); $('#albumsView').classList.remove('hidden'); loadAlbums(); });
+
+/* ── Logo placement modal (deterministic composite — server-side sharp) ── */
+let lgState={card:null,img:null,logoId:null,logoUrl:null,aspect:1,drag:null};
+function cleanBaseClient(img){
+  if(img.versions&&img.versions.length){
+    for(let i=img.versions.length-1;i>=0;i--){ if(img.versions[i].source!=='logo') return img.versions[i].url; }
+  }
+  return img.enhanced_url||img.current_url||'';
+}
+async function openLogoModal(card,img){
+  const latest=imgState[img.projectImageId]||img;
+  lgState={card:card,img:latest,logoId:null,logoUrl:null,aspect:1,drag:null};
+  const box=$('#lgBox'); box.removeAttribute('style'); box.style.display='none';
+  $('#lgOpacity').value=100;
+  $('#lgImg').src=cleanBaseClient(latest);
+  const pick=$('#lgPick'); pick.innerHTML='<span class="lg-pick-empty">Loading…</span>';
+  $('#lgModal').classList.add('open');
+  let logos=[];
+  try{ const d=await api('/api/logos'); logos=d.logos||[]; }catch(e){}
+  pick.innerHTML='';
+  if(!logos.length){
+    const sp=el('span','lg-pick-empty'); sp.innerHTML='No logos yet — add one in <b>Library → Logos</b>.'; pick.appendChild(sp);
+    return;
+  }
+  const swatches=[];
+  logos.forEach(l=>{
+    const sw=el('button','lg-swatch'); sw.innerHTML='<img src="'+esc(l.imageUrl)+'" alt="">';
+    sw.addEventListener('click',()=>selectLogo(l,sw)); pick.appendChild(sw); swatches.push(sw);
+  });
+  // preselect the effective placement (image override, else album default)
+  const eff=latest.logoOverride||current.logoDefault||null;
+  if(eff){
+    const mi=logos.findIndex(l=>l.imageUrl===eff.logoUrl);
+    if(mi>=0) selectLogo(logos[mi],swatches[mi],eff);
+  }
+}
+function defaultBox(){
+  const sr=$('#lgStage').getBoundingClientRect(), box=$('#lgBox');
+  const w=0.18*sr.width, h=w/lgState.aspect;
+  box.style.width=w+'px'; box.style.height=h+'px';
+  box.style.left=(sr.width-w-0.05*sr.width)+'px'; box.style.top=(0.05*sr.height)+'px';
+}
+function positionBoxFromPlacement(p){
+  const sr=$('#lgStage').getBoundingClientRect(), box=$('#lgBox');
+  const w=(p.w||0.18)*sr.width, h=w/lgState.aspect;
+  box.style.width=w+'px'; box.style.height=h+'px';
+  box.style.left=((p.x||0)*sr.width)+'px'; box.style.top=((p.y||0)*sr.height)+'px';
+  const op=(p.opacity==null?1:p.opacity); $('#lgOpacity').value=Math.round(op*100); box.style.opacity=op;
+}
+function selectLogo(logo,swatchEl,placement){
+  lgState.logoId=logo.id; lgState.logoUrl=logo.imageUrl;
+  document.querySelectorAll('.lg-swatch').forEach(s=>s.classList.remove('active'));
+  if(swatchEl) swatchEl.classList.add('active');
+  const box=$('#lgBox'), bi=$('#lgBoxImg');
+  bi.onload=function(){
+    lgState.aspect=(bi.naturalWidth||1)/(bi.naturalHeight||1);
+    box.style.display='block';
+    if(placement) positionBoxFromPlacement(placement);
+    else if(!box.style.width) defaultBox();
+    else { const w=parseFloat(box.style.width)||0; box.style.height=(w/lgState.aspect)+'px'; }
+  };
+  bi.src=logo.imageUrl;
+}
+function lgPointerDown(e){
+  if(!lgState.logoUrl) return;
+  const box=$('#lgBox'), sr=$('#lgStage').getBoundingClientRect();
+  lgState.drag={ resize:(e.target===$('#lgResize')), startX:e.clientX, startY:e.clientY,
+    left:parseFloat(box.style.left)||0, top:parseFloat(box.style.top)||0, w:parseFloat(box.style.width)||0, sr:sr };
+  e.preventDefault(); e.stopPropagation();
+}
+function lgPointerMove(e){
+  const d=lgState.drag; if(!d) return; const box=$('#lgBox'), sr=d.sr;
+  const dx=e.clientX-d.startX, dy=e.clientY-d.startY;
+  if(d.resize){
+    let w=Math.max(20,d.w+dx); w=Math.min(w,sr.width-d.left);
+    box.style.width=w+'px'; box.style.height=(w/lgState.aspect)+'px';
+  } else {
+    const w=parseFloat(box.style.width)||0, h=parseFloat(box.style.height)||0;
+    let left=Math.min(Math.max(d.left+dx,0),sr.width-w), top=Math.min(Math.max(d.top+dy,0),sr.height-h);
+    box.style.left=left+'px'; box.style.top=top+'px';
+  }
+  e.preventDefault();
+}
+function placementNow(){
+  const sr=$('#lgStage').getBoundingClientRect(), br=$('#lgBox').getBoundingClientRect();
+  return { x:(br.left-sr.left)/sr.width, y:(br.top-sr.top)/sr.height, w:br.width/sr.width, opacity:(+$('#lgOpacity').value)/100 };
+}
+function closeLogoModal(){ $('#lgModal').classList.remove('open'); lgState.drag=null; }
+async function lgApply(scope){
+  if(!lgState.logoUrl){ toast('Pick a logo first',true); return; }
+  const p=placementNow(), img=lgState.img;
+  const a=$('#lgApplyAll'), o=$('#lgApplyOne'); a.disabled=o.disabled=true; a.textContent='Applying…';
+  try{
+    if(scope==='all') await api('/api/album/'+encodeURIComponent(current.albumId)+'/logo',{method:'POST',body:{logoId:lgState.logoId,placement:p}});
+    else await api('/api/image/'+encodeURIComponent(img.projectImageId)+'/logo',{method:'POST',body:{logoId:lgState.logoId,placement:p}});
+    closeLogoModal(); toast(scope==='all'?'Logo applied to album':'Logo applied to this image');
+    openAlbum({albumId:current.albumId,name:current.name});
+  }catch(e){ toast(e.message,true); }
+  finally{ a.disabled=o.disabled=false; a.textContent='Set as album default'; }
+}
+async function lgRemove(){
+  if(!confirm('Remove the logo from every image in this album?')) return;
+  try{
+    await api('/api/album/'+encodeURIComponent(current.albumId)+'/logo/remove',{method:'POST'});
+    closeLogoModal(); toast('Logo removed'); openAlbum({albumId:current.albumId,name:current.name});
+  }catch(e){ toast(e.message,true); }
+}
+$('#lgBox').addEventListener('pointerdown',lgPointerDown);
+window.addEventListener('pointermove',lgPointerMove);
+window.addEventListener('pointerup',()=>{ lgState.drag=null; });
+$('#lgOpacity').addEventListener('input',()=>{ $('#lgBox').style.opacity=(+$('#lgOpacity').value)/100; });
+$('#lgApplyAll').addEventListener('click',()=>lgApply('all'));
+$('#lgApplyOne').addEventListener('click',()=>lgApply('one'));
+$('#lgRemove').addEventListener('click',lgRemove);
+$('#lgClose').addEventListener('click',closeLogoModal);
+$('#lgModal').addEventListener('click',e=>{ if(e.target.id==='lgModal') closeLogoModal(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&$('#lgModal').classList.contains('open')) closeLogoModal(); });
 
 /* ── Lightbox ── */
 function openLightbox(src){ $('#lightboxImg').src=src; $('#lightbox').classList.add('open'); }
