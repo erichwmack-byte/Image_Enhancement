@@ -211,7 +211,7 @@
 
   .history{display:flex;align-items:center;gap:9px}
   .hist-nav{display:flex;gap:6px}
-  .hist-strip{display:flex;gap:7px;overflow-x:auto;padding:2px 0;flex:1;scrollbar-width:none}
+  .hist-strip{display:flex;gap:7px;overflow-x:auto;padding:2px 0;flex:1;min-width:0;scroll-behavior:smooth;scrollbar-width:none}
   .hist-strip::-webkit-scrollbar{display:none}
   .hist-thumb{flex:0 0 auto;width:44px;height:44px;border-radius:9px;overflow:hidden;
     border:2px solid transparent;opacity:.6;transition:.2s var(--ease);position:relative}
@@ -726,7 +726,10 @@ function renderHistory(card,img){
   undo.disabled=!(idx>0); redo.disabled=!(img.versions&&idx>=0&&idx<img.versions.length-1);
   undo.addEventListener('click',()=>moveVersion(card,img,'undo'));
   redo.addEventListener('click',()=>moveVersion(card,img,'redo'));
-  nav.appendChild(undo); nav.appendChild(redo); h.appendChild(nav);
+  const del=el('button','btn icon'); del.textContent='🗑'; del.title='Remove this version from history';
+  del.disabled=!(img.versions&&img.versions.length&&idx>=0);
+  del.addEventListener('click',()=>deleteVersion(card,img));
+  nav.appendChild(undo); nav.appendChild(redo); nav.appendChild(del); h.appendChild(nav);
 
   const strip=el('div','hist-strip');
   if(img.versions&&img.versions.length){
@@ -742,6 +745,20 @@ function renderHistory(card,img){
     strip.appendChild(note);
   }
   h.appendChild(strip);
+  // keep the active thumbnail in view (the strip scrolls horizontally within the card)
+  const act=strip.querySelector('.hist-thumb.active');
+  if(act){ requestAnimationFrame(()=>{ strip.scrollLeft = act.offsetLeft - (strip.clientWidth/2) + (act.clientWidth/2); }); }
+}
+async function deleteVersion(card,img){
+  const latest=imgState[img.projectImageId]||img;
+  const vid=latest.active_version_id;
+  if(!vid){ toast('Pick a version to remove first',true); return; }
+  if(!confirm('Remove this version from the history? This cannot be undone.')) return;
+  try{
+    await api('/api/version/delete',{method:'POST',body:{projectImageId:img.projectImageId,versionId:vid}});
+    await refreshImage(img.projectImageId);
+    toast('Version removed');
+  }catch(e){ toast(e.message,true); }
 }
 /* Resolution badge reflects the ACTIVE version, not the image row. Only an upscale
    produces 4K; enhanced / healed / refine / inpaint are all 1K. This fixes the badge
