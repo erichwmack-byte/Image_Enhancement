@@ -920,11 +920,12 @@ function clearRef(card){
 async function refine(card,img,btn){
   const ta=card.querySelector('.refine-in'); const prompt=ta.value.trim();
   if(!prompt){ toast('Enter an instruction first',true); return; }
-  const src=card.querySelector('[data-main]').src;
+  const mainImg=card.querySelector('[data-main]');
+  const src=mainImg.src;
   const materialId=card._refMaterialId||null;
   btn.disabled=true; btn.textContent='Starting…';
   try{
-    await api('/api/refine',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt,materialId}});
+    await api('/api/refine',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt,materialId,source_w:mainImg.naturalWidth||'',source_h:mainImg.naturalHeight||''}});
     btn.textContent='Refining…';
     pollStatus('/api/refine-status',img.jobId,img.image_index,'refined_url',async()=>{
       ta.value=''; clearRef(card); btn.disabled=false; btn.textContent='Refine';
@@ -1179,10 +1180,11 @@ async function runInpaint(){
   if(!prompt && !materialId){ toast('Pick a material or describe the correction first',true); return; }
   const img=ipState.img, card=ipState.card;
   const maskData=ipState.mask.toDataURL('image/png');
-  const src=card.querySelector('[data-main]').src;
+  const mainImg=card.querySelector('[data-main]');
+  const src=mainImg.src;
   const go=$('#ipGo'); go.disabled=true; go.textContent='Starting…';
   try{
-    await api('/api/inpaint',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt,maskData,materialId,surface:ipState.surface}});
+    await api('/api/inpaint',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt,maskData,materialId,surface:ipState.surface,source_w:mainImg.naturalWidth||'',source_h:mainImg.naturalHeight||''}});
     go.textContent='Generating…';
     pollStatus('/api/inpaint-status',img.jobId,img.image_index,'inpainted_url',async()=>{
       go.disabled=false; go.textContent='Generate inpaint';
