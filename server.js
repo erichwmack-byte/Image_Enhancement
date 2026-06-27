@@ -573,13 +573,25 @@ app.get('/api/upscale-status', requireAuth, async (req, res) => {
 
 // ── Refine: Start Job (async — returns immediately) ──────────────────────────
 app.post('/api/refine', requireAuth, async (req, res) => {
-  const { imageUrl, jobId, imageIndex, prompt } = req.body;
+  const { imageUrl, jobId, imageIndex, prompt, materialId } = req.body;
 
   if (!imageUrl || !jobId || !prompt) {
     return res.status(400).json({ error: 'Missing imageUrl, jobId, or prompt' });
   }
 
   try {
+    // Optional reference image (e.g. "change all the stucco to this material",
+    // "put this in the pool"). Resolved server-side with an ownership check.
+    let referenceUrl = '';
+    if (materialId) {
+      const { data: material } = await supabase
+        .from('materials').select('id, user_id, image_url').eq('id', materialId).maybeSingle();
+      if (!material || material.user_id !== req.user.id) {
+        return res.status(404).json({ error: 'Reference image not found' });
+      }
+      referenceUrl = material.image_url;
+    }
+
     const { error: insertError } = await supabase
       .from('refine_jobs')
       .insert({
@@ -602,7 +614,8 @@ app.post('/api/refine', requireAuth, async (req, res) => {
       job_id: jobId,
       image_index: String(imageIndex),
       user_email: req.user.email,
-      prompt: prompt
+      prompt: prompt,
+      reference_url: referenceUrl
     }, {
       headers: { 'Content-Type': 'application/json' },
       timeout: 120000
@@ -759,8 +772,12 @@ async function compositeInpaint(sourceUrl, maskUrl, resultUrl, jobId, imageIndex
   }
 
   // Result image with the mask attached as its alpha channel.
+  // Use 'cover' (uniform scale + center-crop), NOT 'fill': Gemini often returns a
+  // different aspect ratio than the source, and 'fill' would stretch the model's
+  // texture horizontally to match the canvas. 'cover' preserves the texture's
+  // proportions. Output is still exactly W×H so joinChannel lines up with the mask.
   const maskedResult = await sharp(resBuf)
-    .resize(W, H, { fit: 'fill' })
+    .resize(W, H, { fit: 'cover', position: 'centre' })
     .removeAlpha()
     .joinChannel(alpha, { raw: { width: W, height: H, channels: 1 } })
     .png()
@@ -782,8 +799,9 @@ async function compositeInpaint(sourceUrl, maskUrl, resultUrl, jobId, imageIndex
 //   maskData = a base64 PNG of the mask (white = edit region, black = locked).
 //   Accepts a raw base64 string or a full data URL ("data:image/png;base64,...").
 app.post('/api/inpaint', requireAuth, async (req, res) => {
-  const { imageUrl, jobId, imageIndex, prompt, maskData, materialId } = req.body;
+  const { imageUrl, jobId, imageIndex, prompt, maskData, materialId, surface } = req.body;
   const cleanPrompt = (prompt || '').trim();
+  const cleanSurface = ['auto', 'floor', 'wall'].indexOf(surface) !== -1 ? surface : 'auto';
 
   // A material swap can stand in for a text prompt, so require one OR the other.
   if (!imageUrl || !jobId || !maskData || (!cleanPrompt && !materialId)) {
@@ -848,7 +866,8 @@ app.post('/api/inpaint', requireAuth, async (req, res) => {
       user_email: req.user.email,
       prompt: cleanPrompt,
       material_url: materialUrl || '',
-      material_category: materialCategory || ''
+      material_category: materialCategory || '',
+      surface: cleanSurface
     }, {
       headers: { 'Content-Type': 'application/json' },
       timeout: 120000
