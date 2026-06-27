@@ -323,6 +323,15 @@
     display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-muted);background:var(--surface)}
   .ip-mat-none.active{border-color:var(--aqua);color:var(--text)}
   .ip-mat-empty{font-size:13px;color:var(--text-muted)}
+  .ip-surface{display:flex;flex-direction:column;gap:8px}
+  .ip-seg{display:inline-flex;gap:4px;background:var(--bg-2);border:1px solid var(--hairline);border-radius:10px;padding:4px;width:fit-content}
+  .ip-seg-btn{background:transparent;border:0;color:var(--text-muted);font-size:13px;padding:7px 14px;border-radius:7px;cursor:pointer}
+  .ip-seg-btn.active{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  .refine-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .refine-actions .btn.primary{margin-left:auto}
+  .ref-chip{position:relative;width:40px;height:40px;border-radius:8px;overflow:hidden;border:1px solid var(--hairline);flex:0 0 auto}
+  .ref-chip img{width:100%;height:100%;object-fit:cover;display:block}
+  .ref-x{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:0;background:#000;color:#fff;font-size:12px;line-height:1;cursor:pointer;padding:0}
 
   /* toast */
   .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);
@@ -466,10 +475,32 @@
         <span class="ip-material-label">Swap material <span class="muted">(optional)</span></span>
         <div id="ipMatPick" class="ip-mat-pick"></div>
       </div>
+      <div class="ip-surface">
+        <span class="ip-material-label">Surface</span>
+        <div class="ip-seg" id="ipSurface">
+          <button type="button" class="ip-seg-btn active" data-surface="auto">Auto</button>
+          <button type="button" class="ip-seg-btn" data-surface="floor">Floor / ground</button>
+          <button type="button" class="ip-seg-btn" data-surface="wall">Wall / vertical</button>
+        </div>
+      </div>
       <textarea id="ipPrompt" class="refine-in" rows="2" placeholder="Describe the fix for the painted area — e.g. replace with smooth travertine pavers, matching the surrounding shadows"></textarea>
       <div class="ip-actions">
         <button class="btn" id="ipCancel">Cancel</button>
         <button class="btn primary" id="ipGo">Generate inpaint</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ip-modal" id="refModal">
+    <div class="ip-modal-inner">
+      <div class="ip-head">
+        <span>Pick a reference image — your prompt decides what happens with it</span>
+        <button class="ip-close" id="refClose" aria-label="Close">✕</button>
+      </div>
+      <p class="muted" style="margin:0 0 14px">Attach a library image, then write the instruction, e.g. "change all the stucco to this material" or "put this in the pool". No masking needed.</p>
+      <div id="refGrid" class="asset-grid"></div>
+      <div class="ip-actions">
+        <button class="btn" id="refCancel">Cancel</button>
       </div>
     </div>
   </div>
@@ -650,8 +681,12 @@ function buildCard(img){
         '<button class="btn icon" data-compare>⇋ Compare</button></div>'+
       '<div class="divider"></div>'+
       '<div class="tool">'+
-        '<textarea class="refine-in" rows="2" placeholder="Describe a refinement — e.g. warmer patio lighting, more turquoise water"></textarea>'+
-        '<button class="btn primary" data-refine>Refine</button>'+
+        '<textarea class="refine-in" rows="2" placeholder="Describe a change — e.g. warmer lighting, change all the stucco to this material, put this in the pool"></textarea>'+
+        '<div class="refine-actions">'+
+          '<div class="ref-chip" data-ref-chip hidden><img data-ref-thumb alt=""><button class="ref-x" data-ref-clear title="Remove reference">×</button></div>'+
+          '<button class="btn" data-ref-add title="Attach a library image to reference in your prompt">🖼 Reference</button>'+
+          '<button class="btn primary" data-refine>Refine</button>'+
+        '</div>'+
       '</div>'+
       '<div class="history" data-history></div>'+
       '<div class="btn-row">'+
@@ -674,6 +709,8 @@ function buildCard(img){
   card.querySelector('[data-compare]').addEventListener('click',()=>openCompareModal(card,img));
   card.querySelector('[data-delete]').addEventListener('click',()=>deleteImage(card,img));
   card.querySelector('[data-refine]').addEventListener('click',e=>refine(card,img,e.currentTarget));
+  card.querySelector('[data-ref-add]').addEventListener('click',()=>openRefModal(card));
+  card.querySelector('[data-ref-clear]').addEventListener('click',()=>clearRef(card));
   card.querySelector('[data-upscale]').addEventListener('click',e=>upscale(card,img,e.currentTarget));
   card.querySelector('[data-inpaint]').addEventListener('click',()=>openInpaintModal(card,img));
   card.querySelector('[data-logo]').addEventListener('click',()=>openLogoModal(card,img));
@@ -848,16 +885,49 @@ async function refreshImage(projectImageId){
 }
 
 /* ── Refine (async + poll) ── */
+let refTargetCard=null;
+function openRefModal(card){
+  refTargetCard=card;
+  const grid=$('#refGrid');
+  grid.innerHTML='<div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div>';
+  $('#refModal').classList.add('open');
+  api('/api/materials').then(function(d){
+    const materials=d.materials||[]; grid.innerHTML='';
+    if(!materials.length){ grid.innerHTML='<div class="empty"><h2>No library images yet</h2><p class="muted">Add some in Library → Materials.</p></div>'; return; }
+    materials.forEach(function(m){
+      const a=el('div','asset');
+      a.innerHTML='<div class="asset-img"><img src="'+esc(m.imageUrl)+'" alt="" style="max-width:100%;max-height:100%;object-fit:cover"></div><div class="asset-name">'+esc(m.name||'Image')+'</div>';
+      a.style.cursor='pointer';
+      a.addEventListener('click',function(){ selectRef(m); });
+      grid.appendChild(a);
+    });
+  }).catch(function(){ grid.innerHTML='<div class="empty"><h2>Could not load library</h2></div>'; });
+}
+function closeRefModal(){ $('#refModal').classList.remove('open'); refTargetCard=null; }
+function selectRef(m){
+  const card=refTargetCard; if(!card) return;
+  card._refMaterialId=m.id;
+  const chip=card.querySelector('[data-ref-chip]');
+  card.querySelector('[data-ref-thumb]').src=m.imageUrl;
+  chip.hidden=false;
+  closeRefModal();
+  toast('Reference attached — describe what to do with it');
+}
+function clearRef(card){
+  card._refMaterialId=null;
+  const chip=card.querySelector('[data-ref-chip]'); if(chip) chip.hidden=true;
+}
 async function refine(card,img,btn){
   const ta=card.querySelector('.refine-in'); const prompt=ta.value.trim();
-  if(!prompt){ toast('Enter a refinement first',true); return; }
+  if(!prompt){ toast('Enter an instruction first',true); return; }
   const src=card.querySelector('[data-main]').src;
+  const materialId=card._refMaterialId||null;
   btn.disabled=true; btn.textContent='Starting…';
   try{
-    await api('/api/refine',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt}});
+    await api('/api/refine',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt,materialId}});
     btn.textContent='Refining…';
     pollStatus('/api/refine-status',img.jobId,img.image_index,'refined_url',async()=>{
-      ta.value=''; btn.disabled=false; btn.textContent='Refine';
+      ta.value=''; clearRef(card); btn.disabled=false; btn.textContent='Refine';
       await refreshImage(img.projectImageId); toast('Refine saved as a new version');
     },()=>{ btn.disabled=false; btn.textContent='Refine'; });
   }catch(e){ btn.disabled=false; btn.textContent='Refine'; toast(e.message,true); }
@@ -993,19 +1063,26 @@ async function download(url,name){
    user's own mask strokes, so toDataURL() is never tainted (no S3 CORS needed).
    We keep a visible aqua overlay + a hidden white-on-black mask in lockstep, and
    export the mask as a PNG to /api/inpaint. */
-let ipState={card:null,img:null,view:null,mask:null,drawing:false,mode:'brush',last:null,painted:false,materialId:null,materialCategory:null};
+let ipState={card:null,img:null,view:null,mask:null,drawing:false,mode:'brush',last:null,painted:false,materialId:null,materialCategory:null,surface:'auto'};
 
 function openInpaintModal(card,img){
   const latest=imgState[img.projectImageId]||img;
   ipState.card=card; ipState.img=latest; ipState.painted=false; ipState.last=null;
-  ipState.materialId=null; ipState.materialCategory=null;
+  ipState.materialId=null; ipState.materialCategory=null; ipState.surface='auto';
   setIpMode('brush');
+  ipSetSurface('auto');
   $('#ipPrompt').value='';
   ipLoadMaterials();
   const im=$('#ipImg');
   im.onload=()=>ipSetupCanvas(im);
   im.src=card.querySelector('[data-main]').src;
   $('#ipModal').classList.add('open');
+}
+function ipSetSurface(s){
+  ipState.surface=s;
+  document.querySelectorAll('#ipSurface .ip-seg-btn').forEach(function(b){
+    b.classList.toggle('active', b.dataset.surface===s);
+  });
 }
 async function ipLoadMaterials(){
   const pick=$('#ipMatPick');
@@ -1105,7 +1182,7 @@ async function runInpaint(){
   const src=card.querySelector('[data-main]').src;
   const go=$('#ipGo'); go.disabled=true; go.textContent='Starting…';
   try{
-    await api('/api/inpaint',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt,maskData,materialId}});
+    await api('/api/inpaint',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt,maskData,materialId,surface:ipState.surface}});
     go.textContent='Generating…';
     pollStatus('/api/inpaint-status',img.jobId,img.image_index,'inpainted_url',async()=>{
       go.disabled=false; go.textContent='Generate inpaint';
@@ -1121,12 +1198,20 @@ window.addEventListener('pointermove',e=>{ if(ipState.drawing) ipStroke(ipPos(e)
 window.addEventListener('pointerup',()=>{ ipState.drawing=false; ipState.last=null; });
 $('#ipBrush').addEventListener('click',()=>setIpMode('brush'));
 $('#ipEraser').addEventListener('click',()=>setIpMode('eraser'));
+$('#ipSurface').addEventListener('click',e=>{ const b=e.target.closest('.ip-seg-btn'); if(b) ipSetSurface(b.dataset.surface); });
 $('#ipClear').addEventListener('click',ipClearMask);
 $('#ipGo').addEventListener('click',runInpaint);
 $('#ipClose').addEventListener('click',closeInpaintModal);
 $('#ipCancel').addEventListener('click',closeInpaintModal);
 $('#ipModal').addEventListener('click',e=>{ if(e.target.id==='ipModal') closeInpaintModal(); });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape' && $('#ipModal').classList.contains('open')) closeInpaintModal(); });
+$('#refClose').addEventListener('click',closeRefModal);
+$('#refCancel').addEventListener('click',closeRefModal);
+$('#refModal').addEventListener('click',e=>{ if(e.target.id==='refModal') closeRefModal(); });
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape') return;
+  if($('#refModal').classList.contains('open')) closeRefModal();
+  else if($('#ipModal').classList.contains('open')) closeInpaintModal();
+});
 
 /* ── Library: per-user brand assets (logos now; materials next phase) ── */
 function showOnlyView(id){
