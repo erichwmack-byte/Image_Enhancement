@@ -573,7 +573,7 @@ app.get('/api/upscale-status', requireAuth, async (req, res) => {
 
 // ── Refine: Start Job (async — returns immediately) ──────────────────────────
 app.post('/api/refine', requireAuth, async (req, res) => {
-  const { imageUrl, jobId, imageIndex, prompt, materialId } = req.body;
+  const { imageUrl, jobId, imageIndex, prompt, materialId, source_w, source_h } = req.body;
 
   if (!imageUrl || !jobId || !prompt) {
     return res.status(400).json({ error: 'Missing imageUrl, jobId, or prompt' });
@@ -615,7 +615,9 @@ app.post('/api/refine', requireAuth, async (req, res) => {
       image_index: String(imageIndex),
       user_email: req.user.email,
       prompt: prompt,
-      reference_url: referenceUrl
+      reference_url: referenceUrl,
+      source_w: source_w || '',
+      source_h: source_h || ''
     }, {
       headers: { 'Content-Type': 'application/json' },
       timeout: 120000
@@ -799,7 +801,7 @@ async function compositeInpaint(sourceUrl, maskUrl, resultUrl, jobId, imageIndex
 //   maskData = a base64 PNG of the mask (white = edit region, black = locked).
 //   Accepts a raw base64 string or a full data URL ("data:image/png;base64,...").
 app.post('/api/inpaint', requireAuth, async (req, res) => {
-  const { imageUrl, jobId, imageIndex, prompt, maskData, materialId, surface } = req.body;
+  const { imageUrl, jobId, imageIndex, prompt, maskData, materialId, surface, source_w, source_h } = req.body;
   const cleanPrompt = (prompt || '').trim();
   const cleanSurface = ['auto', 'floor', 'wall'].indexOf(surface) !== -1 ? surface : 'auto';
 
@@ -867,7 +869,9 @@ app.post('/api/inpaint', requireAuth, async (req, res) => {
       prompt: cleanPrompt,
       material_url: materialUrl || '',
       material_category: materialCategory || '',
-      surface: cleanSurface
+      surface: cleanSurface,
+      source_w: source_w || '',
+      source_h: source_h || ''
     }, {
       headers: { 'Content-Type': 'application/json' },
       timeout: 120000
