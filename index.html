@@ -364,6 +364,18 @@
       border-radius: 4px;
     }
 
+    /* Full-bleed hero banner: 100vw spans the viewport (body has overflow-x:hidden),
+       the flex wrapper centers it, and the negative top margin cancels the wrapper's
+       60px top padding so it sits flush against the top. */
+    .hero-banner {
+      display: block;
+      width: 100vw;
+      max-width: 100vw;
+      height: auto;
+      margin: -60px 0 36px;
+      align-self: center;
+    }
+
     .aqua-rule {
       width: 60px;
       height: 1px;
@@ -1235,17 +1247,16 @@
 <!-- ── LANDING PAGE ── -->
 <div class="landing-wrapper">
 
-  <img src="assets/Hero1.png" alt="StudioFinish" class="hero-logo">
+  <img src="assets/hero2.png" alt="StudioFinish — Cinematic Landscape Visuals" class="hero-banner">
   <div class="aqua-rule"></div>
 
   <div class="hero-section">
-    <div class="hero-eyebrow">For VIP3D PoolStudio Professionals</div>
     <h1 class="hero-headline">
       Transform Your Renders Into<br>
       <em>Stunning Client Presentations</em>
     </h1>
     <p class="hero-body">
-      StudioFinish transforms standard PoolStudio renders into photo-realistic, client-ready visuals that close deals. Customize your background to match any location on earth, dial in precision lighting and premium surface materials — then watch your static design come alive as a cinematic 5-second video your clients will never forget.
+      StudioFinish transforms standard design renders into photo-realistic, client-ready visuals that close deals. Customize your background to match any location on earth, dial in precision lighting and premium surface materials — then watch your static design come alive as a cinematic 5-second video your clients will never forget.
     </p>
   </div>
 
@@ -1253,7 +1264,7 @@
   <div class="before-after-section">
     <div class="section-label">See The Difference</div>
     <p style="text-align:center; font-size:14px; color:var(--text-muted); line-height:1.7; max-width:540px; margin: 0 auto 24px;">
-      Drag the slider to reveal the transformation. Every image below started as a standard VIP3D PoolStudio render — what you see on the right is what your clients will receive.
+      Drag the slider to reveal the transformation. Every image below started as a standard design render — what you see on the right is what your clients will receive.
     </p>
 
     <div class="slider-wrapper" id="sliderWrapper">
@@ -1345,12 +1356,12 @@
       <div class="step-card">
         <div class="step-num">1</div>
         <div class="step-title">Upload Your Renders</div>
-        <div class="step-body">Upload one or multiple PoolStudio renders. Wide-angle yard shots work best.</div>
+        <div class="step-body">Upload one or multiple design renders. Wide-angle yard shots work best.</div>
       </div>
       <div class="step-card">
         <div class="step-num">2</div>
         <div class="step-title">Set Your Scene</div>
-        <div class="step-body">Choose your backplane environment, lighting, paver style, and output quality.</div>
+        <div class="step-body">Choose your backplane environment, lighting, and paver style.</div>
       </div>
       <div class="step-card">
         <div class="step-num">3</div>
@@ -1429,7 +1440,6 @@
       <ul>
         <li>Wide-angle yard shots produce the best results. Avoid overhead angles.</li>
         <li><strong>Backplane:</strong> Describe your background environment (e.g., Camelback Mountain, Houston Residential, Scottsdale Desert).</li>
-        <li><strong>Quality:</strong> 4K processes faster. 8K delivers maximum fidelity.</li>
       </ul>
     </div>
     <div class="form-group">
@@ -1556,7 +1566,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 // ── Before/After Slider ────────────────────────────────────────────────────
 /*
   ADD YOUR IMAGE PAIRS HERE.
-  - before: path to the original VIP3D render (in your assets/ folder)
+  - before: path to the original design render (in your assets/ folder)
   - after:  path to the StudioFinish enhanced version
   - caption: short description shown below the slider
   Images should be the same dimensions and landscape orientation.
@@ -1565,17 +1575,17 @@ const sliderPairs = [
   {
     before: 'assets/Before1.png',
     after:  'assets/After1.jpg',
-    caption: 'VIP3D Render → StudioFinish Photo-Realistic Result'
+    caption: 'Design Render → StudioFinish Photo-Realistic Result'
   },
   {
     before: 'assets/Before2.png',
     after:  'assets/After2.jpg',
-    caption: 'VIP3D Render → StudioFinish Photo-Realistic Result'
+    caption: 'Design Render → StudioFinish Photo-Realistic Result'
   },
   {
     before: 'assets/Before3.jpg',
     after:  'assets/After3.jpg',
-    caption: 'VIP3D Render → StudioFinish Photo-Realistic Result'
+    caption: 'Design Render → StudioFinish Photo-Realistic Result'
   }
 ];
 
