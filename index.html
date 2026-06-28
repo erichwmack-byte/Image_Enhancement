@@ -1551,6 +1551,11 @@ window.addEventListener('DOMContentLoaded', async () => {
     window.history.replaceState({}, '', '/');
   }
 
+  if (params.get('buy') === '1') {
+    if (authToken) openPurchaseModal();
+    window.history.replaceState({}, '', '/');
+  }
+
   setInterval(async () => {
     if (!authToken) return;
     const { data } = await supabaseClient.auth.refreshSession();
