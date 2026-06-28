@@ -1074,16 +1074,20 @@ async function download(url,name){
    user's own mask strokes, so toDataURL() is never tainted (no S3 CORS needed).
    We keep a visible aqua overlay + a hidden white-on-black mask in lockstep, and
    export the mask as a PNG to /api/inpaint. */
-/* §8E smart-select lexicon: the 4 swappable surfaces that get chips. Each maps a
-   SAM3 concept (the `class` field from /api/segment) to its auto-orientation, which
-   sets the v8 Surface control so the Z-axis prompt is right without the user thinking
-   about it. Pool water / plantings / furniture come back too but stay chip-less (kept
-   for future exclusion logic). */
+/* §8E smart-select lexicon: the surfaces that get chips. `concept` MUST match the
+   SAM3 `class` string returned by /api/segment verbatim (the chip stays disabled on
+   any mismatch); `label` is what the user reads; `orientation` auto-sets the v8
+   Surface control so the Z-axis prompt is right without the user thinking about it.
+   Workflow confidence threshold is set to 0.25 for these to ground reliably. Coping /
+   waterline tile stay on the brush for now (SAM3 won't ground them zero-shot — a
+   future fine-tune or exemplar-box pass adds them). */
 const SF_LEXICON=[
-  {concept:'decking',        label:'Decking',         orientation:'floor'},
-  {concept:'coping',         label:'Coping',          orientation:'floor'},
-  {concept:'waterline tile', label:'Waterline tile',  orientation:'wall'},
-  {concept:'wall fascia',    label:'Wall fascia',     orientation:'wall'}
+  {concept:'pool water',                label:'pool water',    orientation:'floor'},
+  {concept:'raised wall',               label:'wall',          orientation:'wall'},
+  {concept:'paver floor',               label:'decking',       orientation:'floor'},
+  {concept:'paver border',              label:'paver border',  orientation:'floor'},
+  {concept:'raised spa spillway wall',  label:'raised wall',   orientation:'wall'},
+  {concept:'raised wall paver cap',     label:'wall cap',      orientation:'floor'}
 ];
 let ipState={card:null,img:null,view:null,mask:null,drawing:false,mode:'brush',last:null,painted:false,materialId:null,materialCategory:null,surface:'auto',seg:null,smartSel:new Set()};
 
