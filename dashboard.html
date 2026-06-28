@@ -686,9 +686,7 @@ function buildCard(img){
     '</div>'+
     '<div class="card-body">'+
       '<div class="card-title-row"><h4>Design '+num+'</h4>'+
-        '<span class="heal-hint hidden" data-heal-hint>Generating alternate…</span>'+
-        '<button class="btn icon" data-delete title="Move to Trash">🗑</button>'+
-        '<button class="btn icon" data-compare>⇋ Compare</button></div>'+
+        '<button class="btn icon" data-delete title="Move to Trash">🗑</button></div>'+
       '<div class="divider"></div>'+
       '<div class="tool">'+
         '<textarea class="refine-in" rows="2" placeholder="Describe a change — e.g. warmer lighting, change all the stucco to this material, put this in the pool"></textarea>'+
@@ -716,7 +714,6 @@ function buildCard(img){
   // wire
   const stage=card.querySelector('[data-stage]');
   card.querySelector('.expand').addEventListener('click',()=>openLightbox(card.querySelector('[data-main]').src));
-  card.querySelector('[data-compare]').addEventListener('click',()=>openCompareModal(card,img));
   card.querySelector('[data-delete]').addEventListener('click',()=>deleteImage(card,img));
   card.querySelector('[data-refine]').addEventListener('click',e=>refine(card,img,e.currentTarget));
   card.querySelector('[data-ref-add]').addEventListener('click',()=>openRefModal(card));
@@ -1006,10 +1003,7 @@ const healWatching=new Set();
 let albumPollTimer=null;
 
 function maybeStartHeal(card,img){
-  if(healWatching.has(img.projectImageId)) return;
-  if(img.status!=='completed' || !img.enhanced_url) return;  // heal only fires once enhance lands
-  healWatching.add(img.projectImageId);
-  startHealWatch(card,img);
+  return; // Heal retired (1.0.8): no alternate is generated; nothing to watch.
 }
 
 /* Transition a still-enhancing card to its finished state (no fetch — caller supplies fresh). */
