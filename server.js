@@ -7,7 +7,7 @@ const FormData = require('form-data');
 const multer = require('multer');
 const { createClient } = require('@supabase/supabase-js');
 const Stripe = require('stripe');
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, DeleteObjectCommand, CopyObjectCommand } = require('@aws-sdk/client-s3');
 const crypto = require('crypto');
 const sharp = require('sharp'); // server-side masked composite for inpaint (Path A + composite)
 
@@ -24,6 +24,8 @@ const ROBOFLOW_API_URL   = process.env.ROBOFLOW_API_URL   || 'https://serverless
 const ROBOFLOW_WORKSPACE = process.env.ROBOFLOW_WORKSPACE || 'es-workspace-mnemt';
 const ROBOFLOW_WORKFLOW  = process.env.ROBOFLOW_WORKFLOW_ID || 'landscape-texture-swap-segmentation-1782604837524';
 
+// Texture catalog + per-user true-copy seeding added (1.0.9): /api/catalog-upsert
+// (n8n-populated material_catalog) + seedUserMaterials() lazy-copy on first /api/materials.
 // Auto-Heal RETIRED (1.0.8): the Gemini Flash alternate doubled enhance cost
 // ($0.101/image) for a result the user kept ~half the time. Disabled to drop that
 // spend. enqueueHeal() short-circuits on this flag, so no heal_jobs, no Flash call,
@@ -2048,6 +2050,9 @@ const MATERIAL_CATEGORIES = ['paver', 'tile', 'decking', 'stone', 'gravel', 'oth
 
 app.get('/api/materials', requireAuth, async (req, res) => {
   try {
+    // First load for a new user copies the shared catalog into their library.
+    // No-op once seeded.
+    await seedUserMaterials(req.user.id);
     const { data, error } = await supabase
       .from('materials').select('id, name, category, image_url, created_at')
       .eq('user_id', req.user.id).order('created_at', { ascending: false });
@@ -2109,6 +2114,80 @@ app.post('/api/materials/delete', requireAuth, async (req, res) => {
     return res.status(500).json({ error: 'Delete failed' });
   }
 });
+
+// ── Catalog: shared seed library, populated by the "Generate Texture Catalog"
+//    n8n workflow. Secret-protected (same convention as the *-callback handlers).
+app.post('/api/catalog-upsert', async (req, res) => {
+  const secret = req.headers['x-callback-secret'];
+  if (secret !== CALLBACK_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  const { slug, name, category, image_url } = req.body || {};
+  if (!slug || !image_url) return res.status(400).json({ error: 'Missing slug or image_url' });
+  let cat = (category || 'other').toLowerCase();
+  if (MATERIAL_CATEGORIES.indexOf(cat) === -1) cat = 'other';
+  try {
+    const { error } = await supabase
+      .from('material_catalog')
+      .upsert({ slug: String(slug), name: name || 'Material', category: cat, image_url: String(image_url) }, { onConflict: 'slug' });
+    if (error) throw new Error(error.message);
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error('catalog upsert error:', e.message);
+    return res.status(500).json({ error: 'Catalog upsert failed' });
+  }
+});
+
+// ── Seed a new user's material library from the shared catalog (TRUE COPY).
+//    Each user gets their own S3 objects + their own `materials` rows, so the
+//    existing delete endpoint (which removes the backing S3 object) is safe and
+//    never touches another user's copy or the shared catalog. Idempotent: the
+//    user_seed insert doubles as a concurrency claim, so parallel first-loads
+//    won't double-seed. No-op (fast) once a user is already seeded.
+async function seedUserMaterials(userId) {
+  const { error: claimErr } = await supabase.from('user_seed').insert({ user_id: userId });
+  if (claimErr) return false; // already seeded (or claim already held) → skip
+  try {
+    const { data: catalog, error } = await supabase
+      .from('material_catalog').select('slug, name, category, image_url');
+    if (error) throw new Error(error.message);
+    if (!catalog || !catalog.length) {
+      // Nothing to seed yet (catalog not generated). Release the claim so the
+      // user gets seeded once the catalog exists.
+      await supabase.from('user_seed').delete().eq('user_id', userId);
+      return false;
+    }
+    const base = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/`;
+    const stamp = Date.now();
+    const results = await Promise.all(catalog.map(async function (c) {
+      if (!c.image_url || !c.image_url.startsWith(base)) return null;
+      const srcKey = decodeURIComponent(c.image_url.slice(base.length));
+      const destKey = `materials/${userId}_seed_${c.slug}_${stamp}.png`;
+      try {
+        await s3Client.send(new CopyObjectCommand({
+          Bucket: S3_BUCKET,
+          CopySource: `/${S3_BUCKET}/${srcKey}`,
+          Key: destKey,
+          ACL: 'public-read',
+          MetadataDirective: 'COPY'
+        }));
+        return { user_id: userId, name: c.name || 'Material', category: c.category || 'other', image_url: `${base}${destKey}` };
+      } catch (e) {
+        console.error('seed copy failed for', c.slug, e.message);
+        return null;
+      }
+    }));
+    const rows = results.filter(Boolean);
+    if (rows.length) {
+      const { error: insErr } = await supabase.from('materials').insert(rows);
+      if (insErr) throw new Error(insErr.message);
+    }
+    return true;
+  } catch (e) {
+    console.error('seedUserMaterials error:', e.message);
+    // Release the claim so the user can be retried on their next materials load.
+    await supabase.from('user_seed').delete().eq('user_id', userId);
+    return false;
+  }
+}
 
 // ── Logo placement: composite + stamp/remove helpers ────────────────────────
 function n(v) { const x = Number(v); return isFinite(x) ? x : 0; }
