@@ -933,6 +933,7 @@ async function refine(card,img,btn){
   btn.disabled=true; btn.textContent='Starting…';
   try{
     await api('/api/refine',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt,materialId,source_w:mainImg.naturalWidth||'',source_h:mainImg.naturalHeight||''}});
+    loadCredits();
     btn.textContent='Refining…';
     pollStatus('/api/refine-status',img.jobId,img.image_index,'refined_url',async()=>{
       ta.value=''; clearRef(card); btn.disabled=false; btn.textContent='Refine';
@@ -947,6 +948,7 @@ async function upscale(card,img,btn){
   btn.disabled=true; btn.textContent='Starting…';
   try{
     await api('/api/upscale',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),outputQuality:80}});
+    loadCredits();
     btn.textContent='Upscaling…';
     pollStatus('/api/upscale-status',img.jobId,img.image_index,'upscaled_url',async()=>{
       btn.disabled=false; btn.textContent='⬆ Upscale to 4K';
@@ -1291,6 +1293,7 @@ async function runInpaint(){
   const go=$('#ipGo'); go.disabled=true; go.textContent='Starting…';
   try{
     await api('/api/inpaint',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt,maskData,materialId,surface:ipState.surface,source_w:mainImg.naturalWidth||'',source_h:mainImg.naturalHeight||''}});
+    loadCredits();
     go.textContent='Generating…';
     pollStatus('/api/inpaint-status',img.jobId,img.image_index,'inpainted_url',async()=>{
       go.disabled=false; go.textContent='Generate inpaint';
