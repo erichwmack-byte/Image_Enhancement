@@ -18,6 +18,13 @@ const upload = multer();
 const N8N_BASE_URL = 'https://courteous-solace-production-413f.up.railway.app';
 const CALLBACK_SECRET = 'sf_upscale_callback_2024';
 
+// §8E SAM3 smart-select (Roboflow hosted serverless workflow). Key is server-side
+// only — never shipped to the browser. Workspace / workflow default to the user's
+// own "landscape-texture-swap-segmentation" workflow (stock sam3/sam3_final inside).
+const ROBOFLOW_API_URL   = process.env.ROBOFLOW_API_URL   || 'https://serverless.roboflow.com';
+const ROBOFLOW_WORKSPACE = process.env.ROBOFLOW_WORKSPACE || 'es-workspace-mnemt';
+const ROBOFLOW_WORKFLOW  = process.env.ROBOFLOW_WORKFLOW_ID || 'landscape-texture-swap-segmentation-1782604837524';
+
 // Async Auto-Heal: when an enhanced result lands, fire the Gemini Flash alternate
 // as its own background job (heal_jobs + the standalone "Heal Image" workflow)
 // instead of running it inline in the Batch loop. Flip to false to disable heal.
@@ -888,6 +895,130 @@ app.post('/api/inpaint', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Inpaint error:', error.message);
     return res.status(500).json({ error: 'Inpaint request failed' });
+  }
+});
+
+// ── §8E SAM3 Smart-select: Roboflow hosted workflow → per-concept masks ───────
+// Decode COCO "compressed" RLE counts string into an array of run lengths.
+// (Direct port of pycocotools rleFrString; runs are < 2^31 here, 32-bit-safe.)
+function decodeCocoCounts(s) {
+  const cnts = [];
+  let p = 0, m = 0;
+  while (p < s.length) {
+    let x = 0, k = 0, more = true;
+    while (more) {
+      const c = s.charCodeAt(p) - 48;
+      x |= (c & 0x1f) << (5 * k);
+      more = c & 0x20;
+      p++; k++;
+      if (!more && (c & 0x10)) x |= (-1 << (5 * k));
+    }
+    if (m > 2) x += cnts[m - 2];
+    cnts.push(x);
+    m++;
+  }
+  return cnts;
+}
+
+// OR a single COCO RLE mask (column-major) into a shared row-major Uint8 buffer,
+// flipping the union bbox out by reference. 1 = foreground.
+function orRleIntoBuffer(rle, out, w, h, bbox) {
+  const cnts = decodeCocoCounts(rle.counts);
+  let i = 0, val = 0; // COCO runs alternate starting with background (0)
+  for (let r = 0; r < cnts.length; r++) {
+    const run = cnts[r];
+    if (val) {
+      for (let n = 0; n < run; n++) {
+        const idx = i + n;
+        const row = idx % h;        // column-major: row varies fastest
+        const col = (idx - row) / h;
+        out[row * w + col] = 1;     // row-major target
+        if (col < bbox.x0) bbox.x0 = col;
+        if (col > bbox.x1) bbox.x1 = col;
+        if (row < bbox.y0) bbox.y0 = row;
+        if (row > bbox.y1) bbox.y1 = row;
+      }
+    }
+    i += run;
+    val ^= 1;
+  }
+}
+
+// Turn a 1/0 row-major buffer into a white-on-TRANSPARENT PNG (data URL). White =
+// the surface; transparent elsewhere so the browser can union concepts with plain
+// source-over and tint the overlay without treating black as opaque.
+async function bufferToMaskPng(buf, w, h) {
+  const rgba = Buffer.alloc(w * h * 4); // zero-filled => transparent black
+  for (let i = 0; i < buf.length; i++) {
+    if (buf[i]) {
+      const o = i * 4;
+      rgba[o] = 255; rgba[o + 1] = 255; rgba[o + 2] = 255; rgba[o + 3] = 255;
+    }
+  }
+  const png = await sharp(rgba, { raw: { width: w, height: h, channels: 4 } }).png().toBuffer();
+  return 'data:image/png;base64,' + png.toString('base64');
+}
+
+app.post('/api/segment', requireAuth, async (req, res) => {
+  const { imageUrl } = req.body || {};
+  if (!imageUrl) return res.status(400).json({ error: 'Missing imageUrl' });
+  if (!process.env.ROBOFLOW_API_KEY) {
+    console.error('Segment error: ROBOFLOW_API_KEY not set');
+    return res.status(503).json({ error: 'Smart select is not configured' });
+  }
+
+  try {
+    // One hosted SAM3 pass; the workflow has the surface lexicon baked in, so every
+    // call returns all concepts at once (the precompute pattern — one call per image).
+    const url = `${ROBOFLOW_API_URL}/infer/workflows/${ROBOFLOW_WORKSPACE}/${ROBOFLOW_WORKFLOW}`;
+    const rf = await axios.post(url, {
+      api_key: process.env.ROBOFLOW_API_KEY,
+      inputs: { image: { type: 'url', value: imageUrl } },
+      use_cache: true
+    }, { headers: { 'Content-Type': 'application/json' }, timeout: 120000 });
+
+    // SDK returns the outputs array directly; HTTP wraps it in { outputs: [...] }.
+    const outputs = rf.data && (rf.data.outputs || rf.data);
+    const out = Array.isArray(outputs) ? outputs[0] : outputs;
+    const sm = out && out.segmentation_masks;
+    if (!sm || !sm.image || !Array.isArray(sm.predictions)) {
+      console.error('Segment error: unexpected Roboflow shape', JSON.stringify(rf.data).slice(0, 300));
+      return res.status(502).json({ error: 'Segmentation failed' });
+    }
+
+    const W = sm.image.width, H = sm.image.height;
+
+    // Group predictions by concept (the `class` field), then union each group's RLE
+    // masks into one buffer so a concept with N instances becomes one clean mask.
+    const groups = {};
+    for (const p of sm.predictions) {
+      const name = p.class || p.class_name;
+      if (!name || !p.rle_mask || !p.rle_mask.counts) continue;
+      if (!groups[name]) {
+        groups[name] = { buf: new Uint8Array(W * H), count: 0,
+          bbox: { x0: W, y0: H, x1: -1, y1: -1 } };
+      }
+      orRleIntoBuffer(p.rle_mask, groups[name].buf, W, H, groups[name].bbox);
+      groups[name].count++;
+    }
+
+    const concepts = [];
+    for (const name of Object.keys(groups)) {
+      const g = groups[name];
+      concepts.push({
+        concept: name,
+        instances_found: g.count,
+        bbox: g.bbox.x1 < 0 ? null
+          : { x: g.bbox.x0, y: g.bbox.y0, w: g.bbox.x1 - g.bbox.x0 + 1, h: g.bbox.y1 - g.bbox.y0 + 1 },
+        mask: await bufferToMaskPng(g.buf, W, H)
+      });
+    }
+
+    return res.status(200).json({ source_w: W, source_h: H, concepts });
+  } catch (error) {
+    const detail = error.response ? JSON.stringify(error.response.data).slice(0, 300) : error.message;
+    console.error('Segment error:', detail);
+    return res.status(502).json({ error: 'Segmentation failed' });
   }
 });
 
