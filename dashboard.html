@@ -322,6 +322,18 @@
     display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-muted);background:var(--surface)}
   .ip-mat-none.active{border-color:var(--aqua);color:var(--text)}
   .ip-mat-empty{font-size:13px;color:var(--text-muted)}
+  /* material library category sections */
+  .mat-section{margin-bottom:24px}
+  .mat-section-head{font-size:12px;font-weight:700;color:var(--text);text-transform:uppercase;
+    letter-spacing:.05em;margin:0 0 12px;display:flex;align-items:baseline;gap:8px}
+  .mat-section-head .count{font-weight:500;color:var(--text-dim);font-size:11px;letter-spacing:0;text-transform:none}
+  .mat-upload-row{margin-bottom:22px;max-width:170px}
+  /* inpaint picker category chips */
+  .ip-mat-cats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:2px}
+  .ip-mat-cat{padding:6px 12px;border-radius:999px;font-size:12.5px;cursor:pointer;background:var(--surface);
+    color:var(--text-muted);border:1px solid var(--hairline);transition:.15s var(--ease)}
+  .ip-mat-cat:hover{border-color:var(--hairline-strong);color:var(--text)}
+  .ip-mat-cat.active{background:var(--aqua);color:#04201f;border-color:var(--aqua);font-weight:600}
   .ip-surface{display:flex;flex-direction:column;gap:8px}
   .ip-seg{display:inline-flex;gap:4px;background:var(--bg-2);border:1px solid var(--hairline);border-radius:10px;padding:4px;width:fit-content}
   .ip-seg-btn{background:transparent;border:0;color:var(--text-muted);font-size:13px;padding:7px 14px;border-radius:7px;cursor:pointer}
@@ -348,6 +360,18 @@
     box-shadow:var(--shadow-hi);opacity:0;pointer-events:none;transition:.3s var(--ease)}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .toast.err{border-color:rgba(224,98,90,.5)}
+
+  /* out-of-credits modal */
+  .credit-modal{position:fixed;inset:0;z-index:75;background:rgba(3,9,15,.93);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    display:none;align-items:center;justify-content:center;padding:24px}
+  .credit-modal.open{display:flex}
+  .credit-box{width:min(420px,92vw);background:var(--bg-2);border:1px solid var(--hairline-strong);
+    border-radius:18px;box-shadow:var(--shadow-hi);padding:28px 26px;text-align:center}
+  .credit-box h3{font-size:19px;font-weight:700;color:var(--text);margin:0 0 8px}
+  .credit-box p{font-size:13px;color:var(--text-muted);line-height:1.55;margin:0 0 22px}
+  .credit-box .btn-row{flex-direction:column;gap:10px}
+  .credit-box .btn{width:100%;padding:13px}
 
   .hidden{display:none!important}
 
@@ -440,7 +464,7 @@
           </label>
           <span class="muted">Use edge-to-edge texture swatches for the cleanest swaps.</span>
         </div>
-        <div id="materialGrid" class="asset-grid"></div>
+        <div id="materialGrid"></div>
       </div>
     </section>
   </main>
@@ -461,6 +485,17 @@
     </div>
   </div>
   <div class="toast" id="toast"></div>
+
+  <div class="credit-modal" id="creditModal">
+    <div class="credit-box">
+      <h3>You're out of credits</h3>
+      <p>This action needs credits you don't have right now. Top up to keep refining, inpainting, upscaling, and animating.</p>
+      <div class="btn-row">
+        <button class="btn primary" onclick="goBuyCredits()">Buy credits</button>
+        <button class="btn" onclick="closeCreditModal()">Maybe later</button>
+      </div>
+    </div>
+  </div>
 
   <div class="ip-modal" id="ipModal">
     <div class="ip-modal-inner">
@@ -483,6 +518,7 @@
       <div class="ip-chips" id="ipChips" hidden></div>
       <div class="ip-material">
         <span class="ip-material-label">Swap material <span class="muted">(optional)</span></span>
+        <div id="ipMatCats" class="ip-mat-cats"></div>
         <div id="ipMatPick" class="ip-mat-pick"></div>
       </div>
       <div class="ip-surface">
@@ -553,6 +589,10 @@ function toast(msg,isErr){
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3200);
 }
 
+function openCreditModal(){ const m=$('#creditModal'); if(m) m.classList.add('open'); }
+function closeCreditModal(){ const m=$('#creditModal'); if(m) m.classList.remove('open'); }
+function goBuyCredits(){ location.href='/?buy=1'; }
+
 async function api(path,opts){
   opts=opts||{};
   const headers=Object.assign({'Authorization':'Bearer '+TOKEN},opts.headers||{});
@@ -560,6 +600,7 @@ async function api(path,opts){
   const res=await fetch(path,{method:opts.method||'GET',headers,body:opts.body?JSON.stringify(opts.body):undefined});
   if(res.status===401){location.replace('/');throw new Error('unauthorized');}
   let data=null; try{data=await res.json();}catch(e){}
+  if(res.status===402){ openCreditModal(); const err=new Error((data&&data.error)||'Insufficient credits'); err.code='INSUFFICIENT_CREDITS'; throw err; }
   if(!res.ok) throw new Error((data&&data.error)||('Request failed ('+res.status+')'));
   return data;
 }
@@ -939,7 +980,7 @@ async function refine(card,img,btn){
       ta.value=''; clearRef(card); btn.disabled=false; btn.textContent='Refine';
       await refreshImage(img.projectImageId); toast('Refine saved as a new version');
     },()=>{ btn.disabled=false; btn.textContent='Refine'; });
-  }catch(e){ btn.disabled=false; btn.textContent='Refine'; toast(e.message,true); }
+  }catch(e){ btn.disabled=false; btn.textContent='Refine'; if(e.code!=='INSUFFICIENT_CREDITS') toast(e.message,true); }
 }
 
 /* ── Upscale (async + poll) ── */
@@ -954,7 +995,7 @@ async function upscale(card,img,btn){
       btn.disabled=false; btn.textContent='⬆ Upscale to 4K';
       await refreshImage(img.projectImageId); toast('Upscaled to 4K');
     },()=>{ btn.disabled=false; btn.textContent='⬆ Upscale to 4K'; });
-  }catch(e){ btn.disabled=false; btn.textContent='⬆ Upscale to 4K'; toast(e.message,true); }
+  }catch(e){ btn.disabled=false; btn.textContent='⬆ Upscale to 4K'; if(e.code!=='INSUFFICIENT_CREDITS') toast(e.message,true); }
 }
 
 function pollStatus(base,jobId,imageIndex,urlKey,onDone,onFail){
@@ -1053,7 +1094,7 @@ async function animate(card,img,btn){
     await api('/api/animate',{method:'POST',body:{email,image:src,name:'design-'+((parseInt(img.image_index,10)||0)+1)+'.jpg'}});
     btn.textContent='Sent'; toast('Animation is rendering — we’ll email it in 1–2 min');
     loadCredits();
-  }catch(e){ btn.disabled=false; btn.textContent='🎬 Animate'; toast(e.message,true); }
+  }catch(e){ btn.disabled=false; btn.textContent='🎬 Animate'; if(e.code!=='INSUFFICIENT_CREDITS') toast(e.message,true); }
 }
 
 /* ── Download (blob, to force save of cross-origin S3) ── */
@@ -1086,6 +1127,7 @@ const SF_LEXICON=[
   {concept:'raised wall paver cap',     label:'wall cap',      orientation:'floor'}
 ];
 let ipState={card:null,img:null,view:null,mask:null,drawing:false,mode:'brush',last:null,painted:false,materialId:null,materialCategory:null,surface:'auto',seg:null,smartSel:new Set()};
+let ipMaterials=[]; let ipMatCat='all';
 
 function openInpaintModal(card,img){
   const latest=imgState[img.projectImageId]||img;
@@ -1109,23 +1151,41 @@ function ipSetSurface(s){
   });
 }
 async function ipLoadMaterials(){
-  const pick=$('#ipMatPick');
-  pick.innerHTML='<span class="ip-mat-empty">Loading…</span>';
-  let materials=[];
-  try{ const d=await api('/api/materials'); materials=d.materials||[]; }catch(e){}
-  pick.innerHTML='';
-  // "None" tile — plain text inpaint, selected by default.
-  const none=el('button','ip-mat-none active'); none.textContent='None';
+  const cats=$('#ipMatCats'); const pick=$('#ipMatPick');
+  cats.innerHTML=''; pick.innerHTML='<span class="ip-mat-empty">Loading…</span>';
+  try{ const d=await api('/api/materials'); ipMaterials=d.materials||[]; }catch(e){ ipMaterials=[]; }
+  ipMatCat='all';
+  ipRenderMatCats();
+  ipRenderMatSwatches();
+}
+function ipRenderMatCats(){
+  const wrap=$('#ipMatCats'); wrap.innerHTML='';
+  if(!ipMaterials.length) return;
+  const cats=['all'].concat(matCatsPresent(ipMaterials));
+  cats.forEach(function(c){
+    const n=c==='all'?ipMaterials.length:ipMaterials.filter(function(m){return (m.category||'other').toLowerCase()===c;}).length;
+    const chip=el('button','ip-mat-cat'+(c===ipMatCat?' active':''));
+    chip.innerHTML=esc(MAT_LABELS[c]||c)+' <span style="opacity:.7">'+n+'</span>';
+    chip.addEventListener('click',function(){ ipMatCat=c; ipRenderMatCats(); ipRenderMatSwatches(); });
+    wrap.appendChild(chip);
+  });
+}
+function ipRenderMatSwatches(){
+  const pick=$('#ipMatPick'); pick.innerHTML='';
+  // "None" tile — plain text inpaint — always available regardless of filter.
+  const none=el('button','ip-mat-none'+((ipState.materialId==null)?' active':''));
+  none.textContent='None';
   none.addEventListener('click',()=>ipSelectMaterial(null,none));
   pick.appendChild(none);
-  if(!materials.length){
+  if(!ipMaterials.length){
     const sp=el('span','ip-mat-empty');
     sp.innerHTML='No materials yet — add some in <b>Library → Materials</b>.';
     pick.appendChild(sp);
     return;
   }
-  materials.forEach(function(m){
-    const sw=el('button','ip-mat-swatch');
+  const list=ipMatCat==='all'?ipMaterials:ipMaterials.filter(function(m){return (m.category||'other').toLowerCase()===ipMatCat;});
+  list.forEach(function(m){
+    const sw=el('button','ip-mat-swatch'+((ipState.materialId===m.id)?' active':''));
     sw.title=(m.name||'Material')+' · '+(m.category||'other');
     sw.innerHTML='<img src="'+esc(m.imageUrl)+'" alt="">';
     sw.addEventListener('click',()=>ipSelectMaterial(m,sw));
@@ -1301,7 +1361,7 @@ async function runInpaint(){
       await refreshImage(img.projectImageId);
       toast(materialId?'Material swap saved as a new version':'Inpaint saved as a new version');
     },()=>{ go.disabled=false; go.textContent='Generate inpaint'; });
-  }catch(e){ go.disabled=false; go.textContent='Generate inpaint'; toast(e.message,true); }
+  }catch(e){ go.disabled=false; go.textContent='Generate inpaint'; if(e.code!=='INSUFFICIENT_CREDITS') toast(e.message,true); }
 }
 // wire modal controls once
 $('#ipView').addEventListener('pointerdown',e=>{ ipState.drawing=true; ipState.last=null; ipStroke(ipPos(e)); e.preventDefault(); });
@@ -1391,18 +1451,39 @@ async function deleteLogo(l,node){
 }
 
 /* ── Library: Materials (per-user texture swatches for material-aware inpaint) ── */
+const MAT_ORDER=['paver','tile','stone','decking','gravel','other'];
+const MAT_LABELS={paver:'Pavers',tile:'Tile',stone:'Stone',decking:'Decking',gravel:'Gravel',other:'Other',all:'All'};
+function matCatsPresent(materials){
+  const present=[]; materials.forEach(function(m){ const c=(m.category||'other').toLowerCase(); if(present.indexOf(c)<0) present.push(c); });
+  const ordered=MAT_ORDER.filter(function(c){return present.indexOf(c)>=0;});
+  present.forEach(function(c){ if(ordered.indexOf(c)<0) ordered.push(c); });
+  return ordered;
+}
 async function loadMaterials(){
-  const grid=$('#materialGrid');
-  grid.innerHTML='<div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div>';
+  const host=$('#materialGrid');
+  host.innerHTML='<div class="asset-grid"><div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div></div>';
   try{
     const d=await api('/api/materials'); const materials=d.materials||[];
-    grid.innerHTML='';
+    host.innerHTML='';
+    // Upload control (its category comes from the toolbar select, so keep it standalone on top).
+    const row=el('div','mat-upload-row');
     const add=el('button','asset-add');
     add.innerHTML='<span class="plus">＋</span><span>Upload material</span>';
     add.addEventListener('click',pickMaterialFile);
-    grid.appendChild(add);
-    materials.forEach(function(m){ grid.appendChild(buildMaterialAsset(m)); });
-  }catch(e){ grid.innerHTML='<div class="empty"><h2>Could not load materials</h2></div>'; }
+    row.appendChild(add); host.appendChild(row);
+    if(!materials.length) return;
+    const groups={};
+    materials.forEach(function(m){ const c=(m.category||'other').toLowerCase(); (groups[c]=groups[c]||[]).push(m); });
+    matCatsPresent(materials).forEach(function(c){
+      const sec=el('div','mat-section');
+      const h=el('div','mat-section-head');
+      h.innerHTML=esc(MAT_LABELS[c]||c)+' <span class="count">'+groups[c].length+'</span>';
+      sec.appendChild(h);
+      const g=el('div','asset-grid');
+      groups[c].forEach(function(m){ g.appendChild(buildMaterialAsset(m)); });
+      sec.appendChild(g); host.appendChild(sec);
+    });
+  }catch(e){ host.innerHTML='<div class="empty"><h2>Could not load materials</h2></div>'; }
 }
 function buildMaterialAsset(m){
   const a=el('div','asset');
