@@ -24,6 +24,7 @@ const ROBOFLOW_API_URL   = process.env.ROBOFLOW_API_URL   || 'https://serverless
 const ROBOFLOW_WORKSPACE = process.env.ROBOFLOW_WORKSPACE || 'es-workspace-mnemt';
 const ROBOFLOW_WORKFLOW  = process.env.ROBOFLOW_WORKFLOW_ID || 'landscape-texture-swap-segmentation-1782604837524';
 
+// Catalog skip-existing endpoint /api/catalog-slugs added (1.1.0).
 // Texture catalog + per-user true-copy seeding added (1.0.9): /api/catalog-upsert
 // (n8n-populated material_catalog) + seedUserMaterials() lazy-copy on first /api/materials.
 // Auto-Heal RETIRED (1.0.8): the Gemini Flash alternate doubled enhance cost
@@ -2133,6 +2134,21 @@ app.post('/api/catalog-upsert', async (req, res) => {
   } catch (e) {
     console.error('catalog upsert error:', e.message);
     return res.status(500).json({ error: 'Catalog upsert failed' });
+  }
+});
+
+// ── Catalog slugs: lets the generator skip textures already produced, so reruns
+//    only spend on what's missing (and no-image failures self-heal next run).
+app.get('/api/catalog-slugs', async (req, res) => {
+  const secret = req.headers['x-callback-secret'];
+  if (secret !== CALLBACK_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { data, error } = await supabase.from('material_catalog').select('slug');
+    if (error) throw new Error(error.message);
+    return res.status(200).json({ slugs: (data || []).map(function (r) { return r.slug; }) });
+  } catch (e) {
+    console.error('catalog-slugs error:', e.message);
+    return res.status(500).json({ error: 'Could not list catalog slugs' });
   }
 });
 
