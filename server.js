@@ -1,4 +1,3 @@
-
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
 
@@ -25,10 +24,11 @@ const ROBOFLOW_API_URL   = process.env.ROBOFLOW_API_URL   || 'https://serverless
 const ROBOFLOW_WORKSPACE = process.env.ROBOFLOW_WORKSPACE || 'es-workspace-mnemt';
 const ROBOFLOW_WORKFLOW  = process.env.ROBOFLOW_WORKFLOW_ID || 'landscape-texture-swap-segmentation-1782604837524';
 
-// Async Auto-Heal: when an enhanced result lands, fire the Gemini Flash alternate
-// as its own background job (heal_jobs + the standalone "Heal Image" workflow)
-// instead of running it inline in the Batch loop. Flip to false to disable heal.
-const HEAL_ENABLED = true;
+// Auto-Heal RETIRED (1.0.8): the Gemini Flash alternate doubled enhance cost
+// ($0.101/image) for a result the user kept ~half the time. Disabled to drop that
+// spend. enqueueHeal() short-circuits on this flag, so no heal_jobs, no Flash call,
+// no n8n heal fire. The heal-callback/heal-status routes remain as harmless no-ops.
+const HEAL_ENABLED = false;
 
 const S3_BUCKET = 'imageenhancement-production-storage';
 const S3_REGION = process.env.AWS_REGION || 'us-east-2';
@@ -55,7 +55,10 @@ const CREDIT_PACKS = {
 
 const CREDIT_COSTS = {
   enhance: 1,
-  animate: 4
+  refine: 1,
+  inpaint: 1,   // also covers material swap (same /api/inpaint endpoint)
+  upscale: 1,
+  animate: 8    // Veo ≈ $2/clip — priced as a premium action (~1.9x at $0.48/credit)
 };
 
 // ── Middleware ────────────────────────────────────────────────────────────────
@@ -442,6 +445,9 @@ app.post('/api/upscale', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Missing imageUrl or jobId' });
   }
 
+  const deducted = await deductCredits(req.user.id, CREDIT_COSTS.upscale, 'upscale', 'Upscale to 4K');
+  if (!deducted) return res.status(402).json({ error: 'Insufficient credits' });
+
   try {
     const { error: insertError } = await supabase
       .from('upscale_jobs')
@@ -585,6 +591,9 @@ app.post('/api/refine', requireAuth, async (req, res) => {
   if (!imageUrl || !jobId || !prompt) {
     return res.status(400).json({ error: 'Missing imageUrl, jobId, or prompt' });
   }
+
+  const deducted = await deductCredits(req.user.id, CREDIT_COSTS.refine, 'refine', 'Refine image');
+  if (!deducted) return res.status(402).json({ error: 'Insufficient credits' });
 
   try {
     // Optional reference image (e.g. "change all the stucco to this material",
@@ -816,6 +825,9 @@ app.post('/api/inpaint', requireAuth, async (req, res) => {
   if (!imageUrl || !jobId || !maskData || (!cleanPrompt && !materialId)) {
     return res.status(400).json({ error: 'Missing imageUrl, jobId, maskData, or (prompt | materialId)' });
   }
+
+  const deducted = await deductCredits(req.user.id, CREDIT_COSTS.inpaint, 'inpaint', materialId ? 'Material swap' : 'Inpaint');
+  if (!deducted) return res.status(402).json({ error: 'Insufficient credits' });
 
   try {
     // 0. If a material was chosen, resolve it server-side (ownership-checked, same
@@ -1387,7 +1399,22 @@ async function appendVersion(projectImageId, opts) {
     .order('seq', { ascending: false })
     .limit(1)
     .maybeSingle();
-  const nextSeq = (last && last.seq ? last.seq : 0) + 1;
+  let lastSeq = (last && last.seq) ? last.seq : 0;
+
+  // Heal retired (1.0.8): the enhanced/healed pick used to seed the chain. With no
+  // pick, seed the enhanced result as the baseline (seq 1) the first time any edit
+  // appends, so undo always returns to the original enhance.
+  if (lastSeq === 0) {
+    const { data: imgRow } = await supabase
+      .from('project_images').select('enhanced_url').eq('id', projectImageId).maybeSingle();
+    if (imgRow && imgRow.enhanced_url && imgRow.enhanced_url !== url) {
+      await supabase
+        .from('project_image_versions')
+        .insert({ project_image_id: projectImageId, url: imgRow.enhanced_url, source: 'enhanced', prompt: null, seq: 1 });
+      lastSeq = 1;
+    }
+  }
+  const nextSeq = lastSeq + 1;
 
   const { data: version, error: vErr } = await supabase
     .from('project_image_versions')
