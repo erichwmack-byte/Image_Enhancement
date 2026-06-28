@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -327,6 +326,15 @@
   .ip-seg{display:inline-flex;gap:4px;background:var(--bg-2);border:1px solid var(--hairline);border-radius:10px;padding:4px;width:fit-content}
   .ip-seg-btn{background:transparent;border:0;color:var(--text-muted);font-size:13px;padding:7px 14px;border-radius:7px;cursor:pointer}
   .ip-seg-btn.active{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  /* §8E smart-select chips */
+  .ip-chips{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+  .ip-chips[hidden]{display:none}
+  .ip-chip{padding:7px 13px;border-radius:999px;font-size:13px;cursor:pointer;
+    background:var(--surface);color:var(--text);border:1px solid var(--hairline);transition:.15s var(--ease)}
+  .ip-chip:hover{border-color:var(--hairline-strong)}
+  .ip-chip.active{background:var(--aqua);color:#04201f;border-color:var(--aqua);font-weight:600}
+  .ip-chip.disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+  .ip-chip-note{font-size:12px;color:var(--text-muted)}
   .refine-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .refine-actions .btn.primary{margin-left:auto}
   .ref-chip{position:relative;width:40px;height:40px;border-radius:8px;overflow:hidden;border:1px solid var(--hairline);flex:0 0 auto}
@@ -467,10 +475,12 @@
       <div class="ip-tools">
         <button class="btn active" id="ipBrush" data-mode="brush">🖌 Brush</button>
         <button class="btn" id="ipEraser" data-mode="eraser">🩹 Eraser</button>
+        <button class="btn" id="ipSmart" data-mode="smart">🪄 Smart select</button>
         <label class="ip-size">Size <input type="range" id="ipSize" min="6" max="140" value="40"></label>
         <button class="btn" id="ipClear">Clear mask</button>
         <span class="ip-hint">Only the painted area changes — everything else is preserved exactly.</span>
       </div>
+      <div class="ip-chips" id="ipChips" hidden></div>
       <div class="ip-material">
         <span class="ip-material-label">Swap material <span class="muted">(optional)</span></span>
         <div id="ipMatPick" class="ip-mat-pick"></div>
@@ -1064,12 +1074,25 @@ async function download(url,name){
    user's own mask strokes, so toDataURL() is never tainted (no S3 CORS needed).
    We keep a visible aqua overlay + a hidden white-on-black mask in lockstep, and
    export the mask as a PNG to /api/inpaint. */
-let ipState={card:null,img:null,view:null,mask:null,drawing:false,mode:'brush',last:null,painted:false,materialId:null,materialCategory:null,surface:'auto'};
+/* §8E smart-select lexicon: the 4 swappable surfaces that get chips. Each maps a
+   SAM3 concept (the `class` field from /api/segment) to its auto-orientation, which
+   sets the v8 Surface control so the Z-axis prompt is right without the user thinking
+   about it. Pool water / plantings / furniture come back too but stay chip-less (kept
+   for future exclusion logic). */
+const SF_LEXICON=[
+  {concept:'decking',        label:'Decking',         orientation:'floor'},
+  {concept:'coping',         label:'Coping',          orientation:'floor'},
+  {concept:'waterline tile', label:'Waterline tile',  orientation:'wall'},
+  {concept:'wall fascia',    label:'Wall fascia',     orientation:'wall'}
+];
+let ipState={card:null,img:null,view:null,mask:null,drawing:false,mode:'brush',last:null,painted:false,materialId:null,materialCategory:null,surface:'auto',seg:null,smartSel:new Set()};
 
 function openInpaintModal(card,img){
   const latest=imgState[img.projectImageId]||img;
   ipState.card=card; ipState.img=latest; ipState.painted=false; ipState.last=null;
   ipState.materialId=null; ipState.materialCategory=null; ipState.surface='auto';
+  ipState.seg=null; ipState.smartSel=new Set();
+  $('#ipChips').hidden=true; $('#ipChips').innerHTML='';
   setIpMode('brush');
   ipSetSurface('auto');
   $('#ipPrompt').value='';
@@ -1136,6 +1159,89 @@ function setIpMode(mode){
   ipState.mode=mode;
   $('#ipBrush').classList.toggle('active',mode==='brush');
   $('#ipEraser').classList.toggle('active',mode==='eraser');
+  $('#ipSmart').classList.toggle('active',mode==='smart');
+  const chips=$('#ipChips');
+  if(mode==='smart'){ chips.hidden=false; ipEnsureSegmented(); }
+  else { chips.hidden=true; }
+}
+/* Build a once-per-concept aqua-tinted canvas from a white-on-transparent mask PNG,
+   so the visible overlay can be composited cheaply on every chip toggle. */
+function ipTintCanvas(img){
+  const c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight;
+  const x=c.getContext('2d');
+  x.drawImage(img,0,0);
+  x.globalCompositeOperation='source-in';
+  x.fillStyle='rgba(0,194,199,1)';
+  x.fillRect(0,0,c.width,c.height);
+  return c;
+}
+/* One Roboflow call per image, cached on ipState.seg keyed by the image src. */
+async function ipEnsureSegmented(){
+  const chips=$('#ipChips');
+  const src=ipState.img && (ipState.card.querySelector('[data-main]').src);
+  if(ipState.seg && ipState.seg.src===src){ ipRenderChips(); return; }
+  chips.innerHTML='<span class="ip-chip-note">Detecting surfaces…</span>';
+  try{
+    const d=await api('/api/segment',{method:'POST',body:{imageUrl:src}});
+    const concepts={};
+    (d.concepts||[]).forEach(function(c){
+      const img=new Image(); img.src=c.mask;
+      const entry={found:c.instances_found,orientation:null,img:img,tint:null,bbox:c.bbox};
+      img.onload=function(){ entry.tint=ipTintCanvas(img); };
+      concepts[c.concept]=entry;
+    });
+    // attach orientation from the lexicon so chip clicks can auto-set Floor/Wall
+    SF_LEXICON.forEach(function(l){ if(concepts[l.concept]) concepts[l.concept].orientation=l.orientation; });
+    ipState.seg={src:src, concepts:concepts};
+    ipRenderChips();
+  }catch(e){
+    chips.innerHTML='';
+    const note=el('span','ip-chip-note');
+    note.textContent='Smart select unavailable — use Brush. ('+e.message+')';
+    chips.appendChild(note);
+  }
+}
+function ipRenderChips(){
+  const chips=$('#ipChips'); chips.innerHTML='';
+  const concepts=(ipState.seg&&ipState.seg.concepts)||{};
+  SF_LEXICON.forEach(function(l){
+    const c=concepts[l.concept];
+    const found=c&&c.found>0;
+    const chip=el('button','ip-chip'+(found?'':' disabled')+(ipState.smartSel.has(l.concept)?' active':''));
+    chip.textContent=l.label+(found?' ('+c.found+')':'');
+    chip.dataset.concept=l.concept;
+    if(!found) chip.title='Not detected in this image';
+    chips.appendChild(chip);
+  });
+  const hint=el('span','ip-chip-note');
+  hint.textContent='Pick a surface — Brush still works to refine the selection.';
+  chips.appendChild(hint);
+}
+function ipToggleConcept(name){
+  const c=ipState.seg&&ipState.seg.concepts[name];
+  if(!c||!c.found) return;
+  if(ipState.smartSel.has(name)) ipState.smartSel.delete(name);
+  else { ipState.smartSel.add(name); if(c.orientation) ipSetSurface(c.orientation); }
+  ipRebuildSmart();
+  ipRenderChips();
+}
+/* Rebuild mask + visible overlay from the selected concepts. Union is just stacking
+   the white-on-transparent masks (source-over) over the black mask backdrop, which
+   is exactly the white-on-black PNG /api/inpaint already expects. */
+function ipRebuildSmart(){
+  const mask=ipState.mask, view=ipState.view; if(!mask||!view) return;
+  const W=mask.width, H=mask.height;
+  const m=mask.getContext('2d'); m.globalCompositeOperation='source-over';
+  m.fillStyle='#000'; m.fillRect(0,0,W,H);
+  const v=view.getContext('2d'); v.clearRect(0,0,W,H);
+  let any=false;
+  ipState.smartSel.forEach(function(name){
+    const c=ipState.seg.concepts[name]; if(!c||!c.img||!c.img.complete) return;
+    m.drawImage(c.img,0,0,W,H);
+    if(c.tint){ v.save(); v.globalAlpha=.5; v.drawImage(c.tint,0,0,W,H); v.restore(); }
+    any=true;
+  });
+  ipState.painted=any;
 }
 function ipClearMask(){
   if(!ipState.view||!ipState.mask) return;
@@ -1143,6 +1249,7 @@ function ipClearMask(){
   ipState.view.getContext('2d').clearRect(0,0,W,H);
   const mctx=ipState.mask.getContext('2d'); mctx.fillStyle='#000'; mctx.fillRect(0,0,W,H);
   ipState.painted=false;
+  if(ipState.smartSel.size){ ipState.smartSel.clear(); ipRenderChips(); }
 }
 function ipPos(e){
   const v=ipState.view, r=v.getBoundingClientRect();
@@ -1151,6 +1258,7 @@ function ipPos(e){
 }
 function ipStroke(p){
   if(!ipState.view||!ipState.mask) return;
+  if(ipState.mode==='smart') return; // chips drive the mask in smart-select mode
   const lw=Math.max(1,(+$('#ipSize').value)*p.scale);
   const erase=ipState.mode==='eraser';
   const from=ipState.last||p;
@@ -1200,6 +1308,8 @@ window.addEventListener('pointermove',e=>{ if(ipState.drawing) ipStroke(ipPos(e)
 window.addEventListener('pointerup',()=>{ ipState.drawing=false; ipState.last=null; });
 $('#ipBrush').addEventListener('click',()=>setIpMode('brush'));
 $('#ipEraser').addEventListener('click',()=>setIpMode('eraser'));
+$('#ipSmart').addEventListener('click',()=>setIpMode('smart'));
+$('#ipChips').addEventListener('click',e=>{ const b=e.target.closest('.ip-chip'); if(b&&!b.classList.contains('disabled')) ipToggleConcept(b.dataset.concept); });
 $('#ipSurface').addEventListener('click',e=>{ const b=e.target.closest('.ip-seg-btn'); if(b) ipSetSurface(b.dataset.surface); });
 $('#ipClear').addEventListener('click',ipClearMask);
 $('#ipGo').addEventListener('click',runInpaint);
