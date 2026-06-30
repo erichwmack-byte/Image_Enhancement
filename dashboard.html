@@ -90,7 +90,8 @@
   .back:hover{color:var(--text);transform:translateX(-2px)}
 
   /* ── Album tiles ── */
-  .album-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(264px,1fr));gap:22px}
+  .album-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:26px}
+  @media (max-width:520px){ .album-grid{grid-template-columns:1fr} }
   /* library (reusable assets — deliberately distinct from album tiles) */
   .lib-tabs{display:flex;gap:6px;margin-bottom:26px;border-bottom:1px solid var(--hairline)}
   .lib-tab{padding:10px 16px;font-size:14px;font-weight:600;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .2s var(--ease),border-color .2s var(--ease)}
@@ -207,6 +208,13 @@
   .btn-row{display:flex;gap:9px;flex-wrap:wrap}
   .btn.icon{padding:10px 12px}
   .btn.wide{flex:1}
+  /* stacked, self-describing action groups in the image card */
+  .tool-group{display:flex;flex-direction:column;gap:8px}
+  .tool-hint{font-size:12px;line-height:1.5;color:var(--text-muted);margin:0}
+  .tool-hint .eg{display:block;margin-top:5px;color:var(--text-dim);font-style:italic;font-size:11.5px}
+  .btn-row.pair{flex-wrap:nowrap}
+  .btn-row.pair .btn{flex:1}
+  .share-row .btn{flex:1}
 
   .history{display:flex;align-items:center;gap:9px;min-width:0}
   .hist-nav{display:flex;gap:6px}
@@ -322,6 +330,22 @@
     display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-muted);background:var(--surface)}
   .ip-mat-none.active{border-color:var(--aqua);color:var(--text)}
   .ip-mat-empty{font-size:13px;color:var(--text-muted)}
+  /* inpaint: two-column shell — material rail on the left, image + controls on the right */
+  .ip-body{display:flex;gap:18px;align-items:flex-start}
+  .ip-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:14px}
+  .ip-mat-rail{flex:0 0 auto;align-self:stretch;max-height:64vh;overflow-y:auto;overflow-x:hidden;padding-right:6px}
+  .ip-mat-rail .ip-material-label{display:block;margin-bottom:10px}
+  .ip-mat-rail .ip-mat-cats{margin-bottom:12px}
+  .ip-mat-rail .ip-mat-pick{display:grid;grid-template-columns:repeat(3,54px);gap:8px;min-height:0}
+  .ip-mat-rail::-webkit-scrollbar{width:8px}
+  .ip-mat-rail::-webkit-scrollbar-thumb{background:var(--hairline-strong);border-radius:8px}
+  .ip-guidance{font-size:12px;line-height:1.55;color:var(--text-muted);margin:0;
+    padding:11px 13px;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-sm)}
+  @media (max-width:760px){
+    .ip-body{flex-direction:column}
+    .ip-mat-rail{flex:0 0 auto;align-self:stretch;max-height:none;overflow:visible;padding-right:0;width:100%}
+    .ip-mat-rail .ip-mat-pick{grid-template-columns:repeat(auto-fill,54px)}
+  }
   /* material library category sections */
   .mat-section{margin-bottom:24px}
   .mat-section-head{font-size:12px;font-weight:700;color:var(--text);text-transform:uppercase;
@@ -500,39 +524,46 @@
   <div class="ip-modal" id="ipModal">
     <div class="ip-modal-inner">
       <div class="ip-head">
-        <span>Inpaint — paint over the area to fix, then describe the correction</span>
+        <span>Inpaint — paint a specific area to add an object or swap a material in that exact spot</span>
         <button class="ip-close" id="ipClose" aria-label="Close">✕</button>
       </div>
-      <div class="ip-stage" id="ipStage">
-        <img id="ipImg" alt="">
-        <canvas id="ipView"></canvas>
-      </div>
-      <div class="ip-tools">
-        <button class="btn active" id="ipBrush" data-mode="brush">🖌 Brush</button>
-        <button class="btn" id="ipEraser" data-mode="eraser">🩹 Eraser</button>
-        <button class="btn" id="ipSmart" data-mode="smart">🪄 Smart select</button>
-        <label class="ip-size">Size <input type="range" id="ipSize" min="6" max="140" value="40"></label>
-        <button class="btn" id="ipClear">Clear mask</button>
-        <span class="ip-hint">Only the painted area changes — everything else is preserved exactly.</span>
-      </div>
-      <div class="ip-chips" id="ipChips" hidden></div>
-      <div class="ip-material">
-        <span class="ip-material-label">Swap material <span class="muted">(optional)</span></span>
-        <div id="ipMatCats" class="ip-mat-cats"></div>
-        <div id="ipMatPick" class="ip-mat-pick"></div>
-      </div>
-      <div class="ip-surface">
-        <span class="ip-material-label">Surface</span>
-        <div class="ip-seg" id="ipSurface">
-          <button type="button" class="ip-seg-btn active" data-surface="auto">Auto</button>
-          <button type="button" class="ip-seg-btn" data-surface="floor">Floor / ground</button>
-          <button type="button" class="ip-seg-btn" data-surface="wall">Wall / vertical</button>
+      <div class="ip-body">
+        <aside class="ip-mat-rail">
+          <div class="ip-material">
+            <span class="ip-material-label">Swap material <span class="muted">(optional)</span></span>
+            <div id="ipMatCats" class="ip-mat-cats"></div>
+            <div id="ipMatPick" class="ip-mat-pick"></div>
+          </div>
+        </aside>
+        <div class="ip-main">
+          <div class="ip-stage" id="ipStage">
+            <img id="ipImg" alt="">
+            <canvas id="ipView"></canvas>
+          </div>
+          <div class="ip-tools">
+            <button class="btn active" id="ipBrush" data-mode="brush">🖌 Brush</button>
+            <button class="btn" id="ipEraser" data-mode="eraser">🩹 Eraser</button>
+            <button class="btn" id="ipSmart" data-mode="smart">🪄 Smart select</button>
+            <label class="ip-size">Size <input type="range" id="ipSize" min="6" max="140" value="40"></label>
+            <button class="btn" id="ipClear">Clear mask</button>
+            <span class="ip-hint">Only the painted area changes — everything else is preserved exactly.</span>
+          </div>
+          <div class="ip-chips" id="ipChips" hidden></div>
+          <div class="ip-surface">
+            <span class="ip-material-label">Surface</span>
+            <div class="ip-seg" id="ipSurface">
+              <button type="button" class="ip-seg-btn active" data-surface="auto">Auto</button>
+              <button type="button" class="ip-seg-btn" data-surface="floor">Floor / ground</button>
+              <button type="button" class="ip-seg-btn" data-surface="wall">Wall / vertical</button>
+            </div>
+          </div>
+          <p class="ip-guidance">A little bleed-over into the painted area is fine — results can be unpredictable. If a texture comes out too large, or an object lands in the wrong spot or plane, switch to <b>Global refine</b> with prompt commands instead. Swapping waterline tile or decking is often better done with <b>Global refine</b> using a reference swatch and a detailed prompt.</p>
+          <textarea id="ipPrompt" class="refine-in" rows="2" placeholder="Describe the fix for the painted area — e.g. replace with smooth travertine pavers, matching the surrounding shadows"></textarea>
+          <div class="ip-actions">
+            <button class="btn" id="ipCancel">Cancel</button>
+            <button class="btn primary" id="ipGo">Generate inpaint</button>
+          </div>
         </div>
-      </div>
-      <textarea id="ipPrompt" class="refine-in" rows="2" placeholder="Describe the fix for the painted area — e.g. replace with smooth travertine pavers, matching the surrounding shadows"></textarea>
-      <div class="ip-actions">
-        <button class="btn" id="ipCancel">Cancel</button>
-        <button class="btn primary" id="ipGo">Generate inpaint</button>
       </div>
     </div>
   </div>
@@ -729,22 +760,35 @@ function buildCard(img){
       '<div class="card-title-row"><h4>Design '+num+'</h4>'+
         '<button class="btn icon" data-delete title="Move to Trash">🗑</button></div>'+
       '<div class="divider"></div>'+
-      '<div class="tool">'+
-        '<textarea class="refine-in" rows="2" placeholder="Describe a change — e.g. warmer lighting, change all the stucco to this material, put this in the pool"></textarea>'+
-        '<div class="refine-actions">'+
-          '<div class="ref-chip" data-ref-chip hidden><img data-ref-thumb alt=""><button class="ref-x" data-ref-clear title="Remove reference">×</button></div>'+
-          '<button class="btn" data-ref-add title="Attach a library image to reference in your prompt">🖼 Reference</button>'+
-          '<button class="btn primary" data-refine>Refine</button>'+
+      '<div class="tool-group">'+
+        '<p class="tool-hint"><b>Global refine</b> — for big, scene-wide changes: decking, background, time of day, pebble interior color, a property-line wall or hedges. A reference swatch is optional.'+
+          '<span class="eg">e.g. “Change the decking to gray tumbled limestone pavers. Make it a night scene with a starry sky and full moon, and add a soft glow to the pool water. Add a full-length 15-ft leafy ficus hedge wall behind the foreground shrubs but in front of the background mountains.”</span></p>'+
+        '<div class="tool">'+
+          '<textarea class="refine-in" rows="2" placeholder="Describe a change — e.g. warmer lighting, change all the stucco to this material, put this in the pool"></textarea>'+
+          '<div class="refine-actions">'+
+            '<div class="ref-chip" data-ref-chip hidden><img data-ref-thumb alt=""><button class="ref-x" data-ref-clear title="Remove reference">×</button></div>'+
+            '<button class="btn" data-ref-add title="Attach a library swatch to reference in your prompt">🖼 Reference</button>'+
+            '<button class="btn primary" data-refine>Refine</button>'+
+          '</div>'+
         '</div>'+
       '</div>'+
       '<div class="history" data-history></div>'+
-      '<div class="btn-row">'+
+      '<div class="divider"></div>'+
+      '<div class="btn-row pair">'+
         '<button class="btn wide" data-upscale>⬆ Upscale to 4K</button>'+
-        '<button class="btn" data-inpaint>✎ Inpaint</button>'+
-        '<button class="btn" data-logo>🏷 Logo</button>'+
-        '<button class="btn" data-download>⬇ Download</button>'+
-        '<button class="btn icon" data-pin title="Share to Pinterest">📌</button>'+
-        '<button class="btn icon" data-fb title="Share to Facebook">f</button>'+
+        '<button class="btn wide" data-download>⬇ Download</button>'+
+      '</div>'+
+      '<div class="tool-group">'+
+        '<p class="tool-hint"><b>Inpaint</b> — paint over one specific spot to add an object or swap a material in just that location.</p>'+
+        '<button class="btn wide" data-inpaint>✎ Inpaint a specific area</button>'+
+      '</div>'+
+      '<div class="tool-group">'+
+        '<p class="tool-hint"><b>Logo</b> — overlay one of your saved brand logos or watermarks and position it on the image.</p>'+
+        '<button class="btn wide" data-logo>🏷 Add logo / watermark</button>'+
+      '</div>'+
+      '<div class="btn-row share-row">'+
+        '<button class="btn" data-pin title="Share to Pinterest">📌 Pinterest</button>'+
+        '<button class="btn" data-fb title="Share to Facebook">f Facebook</button>'+
       '</div>'+
       '<div class="anim">'+
         '<input type="email" placeholder="Email for 5s animation…">'+
