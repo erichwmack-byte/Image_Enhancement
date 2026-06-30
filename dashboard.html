@@ -110,7 +110,7 @@
   .lib-tab{padding:10px 16px;font-size:14px;font-weight:600;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .2s var(--ease),border-color .2s var(--ease)}
   .lib-tab:hover{color:var(--text)}
   .lib-tab.active{color:var(--text);border-bottom-color:var(--aqua)}
-  .asset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px}
+  .asset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:18px}
   .asset{position:relative;border-radius:var(--r-md);overflow:hidden;background:var(--surface);border:1px solid var(--hairline);transition:border-color .2s var(--ease)}
   .asset:hover{border-color:var(--hairline-strong)}
   .asset-img{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;overflow:hidden;
@@ -233,13 +233,13 @@
   .hist-nav{display:flex;gap:6px}
   .hist-strip{display:flex;gap:7px;overflow-x:auto;padding:2px 0;flex:1;min-width:0;scroll-behavior:smooth;scrollbar-width:none}
   .hist-strip::-webkit-scrollbar{display:none}
-  .hist-thumb{flex:0 0 auto;width:44px;height:44px;border-radius:9px;overflow:hidden;
+  .hist-thumb{flex:0 0 auto;width:80px;height:80px;border-radius:12px;overflow:hidden;
     border:2px solid transparent;opacity:.6;transition:.2s var(--ease);position:relative}
   .hist-thumb img{width:100%;height:100%;object-fit:cover}
   .hist-thumb:hover{opacity:1}
   .hist-thumb.active{opacity:1;border-color:var(--aqua)}
-  .hist-thumb span{position:absolute;bottom:0;right:0;font-size:8.5px;font-weight:700;
-    padding:1px 3px;background:rgba(6,16,26,.75);border-top-left-radius:5px;color:var(--text-muted)}
+  .hist-thumb span{position:absolute;bottom:0;right:0;font-size:10px;font-weight:700;
+    padding:1px 4px;background:rgba(6,16,26,.75);border-top-left-radius:6px;color:var(--text-muted)}
   .divider{height:1px;background:var(--hairline);margin:1px 0}
   .muted{color:var(--text-muted);font-size:12.5px}
 
@@ -354,6 +354,20 @@
   .ip-mat-rail::-webkit-scrollbar-thumb{background:var(--hairline-strong);border-radius:8px}
   .ip-guidance{font-size:12px;line-height:1.55;color:var(--text-muted);margin:0;
     padding:11px 13px;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-sm)}
+  /* inpaint: previous-results strip + trash */
+  .ip-history-row{display:flex;align-items:center;gap:10px}
+  .ip-history{display:flex;gap:8px;overflow-x:auto;flex:1;min-width:0;padding:2px 0;scrollbar-width:thin}
+  .ip-history::-webkit-scrollbar{height:7px}
+  .ip-history::-webkit-scrollbar-thumb{background:var(--hairline-strong);border-radius:7px}
+  .ip-history .muted{align-self:center}
+  .ip-hist-thumb{flex:0 0 auto;width:64px;height:64px;border-radius:10px;overflow:hidden;
+    border:2px solid transparent;opacity:.7;transition:.15s var(--ease);position:relative;background:var(--bg-2)}
+  .ip-hist-thumb img{width:100%;height:100%;object-fit:cover}
+  .ip-hist-thumb:hover{opacity:1}
+  .ip-hist-thumb.active{opacity:1;border-color:var(--aqua)}
+  .ip-hist-thumb span{position:absolute;bottom:0;right:0;font-size:9px;font-weight:700;
+    padding:1px 4px;background:rgba(6,16,26,.78);border-top-left-radius:5px;color:var(--text-muted)}
+  #ipTrash{flex:0 0 auto}
   @media (max-width:760px){
     .ip-body{flex-direction:column}
     .ip-mat-rail{flex:0 0 auto;align-self:stretch;max-height:none;overflow:visible;padding-right:0;width:100%}
@@ -568,6 +582,10 @@
             <img id="ipImg" alt="">
             <canvas id="ipView"></canvas>
           </div>
+          <div class="ip-history-row">
+            <div class="ip-history" id="ipHistory"></div>
+            <button class="btn icon" id="ipTrash" title="Remove the current version from history">🗑</button>
+          </div>
           <div class="ip-tools">
             <button class="btn active" id="ipBrush" data-mode="brush">🖌 Brush</button>
             <button class="btn" id="ipEraser" data-mode="eraser">🩹 Eraser</button>
@@ -585,7 +603,7 @@
               <button type="button" class="ip-seg-btn" data-surface="wall">Wall / vertical</button>
             </div>
           </div>
-          <p class="ip-guidance">A little bleed-over into the painted area is fine — results can be unpredictable. If a texture comes out too large, or an object lands in the wrong spot or plane, switch to <b>Global refine</b> with prompt commands instead. Swapping waterline tile or decking is often better done with <b>Global refine</b> using a reference swatch and a detailed prompt.</p>
+          <p class="ip-guidance">A little bleed-over into the painted area is fine — results can be unpredictable. If a texture comes out too large, or an object lands in the wrong spot or plane, you can correct its size or position afterward with <b>Global refine</b> using prompt commands. Swapping waterline tile or decking is often better done with <b>Global refine</b> using a reference swatch and a detailed prompt.</p>
           <textarea id="ipPrompt" class="refine-in" rows="2" placeholder="Describe the fix for the painted area — e.g. replace with smooth travertine pavers, matching the surrounding shadows"></textarea>
           <div class="ip-actions">
             <button class="btn" id="ipCancel">Cancel</button>
@@ -1235,6 +1253,7 @@ function openInpaintModal(card,img){
   im.onload=()=>ipSetupCanvas(im);
   im.src=card.querySelector('[data-main]').src;
   $('#ipModal').classList.add('open');
+  ipRenderHistory();
 }
 function ipSetSurface(s){
   ipState.surface=s;
@@ -1298,6 +1317,64 @@ function ipSelectMaterial(m,node){
 function closeInpaintModal(){
   $('#ipModal').classList.remove('open');
   ipState.drawing=false; ipState.last=null; ipState.painted=false;
+}
+/* In-modal result history: step back through saved versions and keep inpainting
+   without leaving the editor. Backed by the same version endpoints the card uses. */
+function ipRenderHistory(){
+  const wrap=$('#ipHistory'); if(!wrap) return;
+  wrap.innerHTML='';
+  const img=ipState.img||{};
+  const vers=img.versions||[];
+  if(!vers.length){
+    const note=el('span','muted');
+    note.textContent='Your inpaint results will stack up here — tap one to step back.';
+    wrap.appendChild(note);
+    return;
+  }
+  vers.forEach(function(v){
+    const th=el('button','ip-hist-thumb'+(v.id===img.active_version_id?' active':''));
+    th.title=(v.source||'version')+(v.prompt?' — '+v.prompt:'');
+    th.innerHTML='<img src="'+esc(v.url)+'" alt=""><span>v'+v.seq+'</span>';
+    th.addEventListener('click',function(){ if(v.id!==ipState.img.active_version_id) ipSetVersion(v.id); });
+    wrap.appendChild(th);
+  });
+  const act=wrap.querySelector('.ip-hist-thumb.active');
+  if(act){ requestAnimationFrame(function(){ wrap.scrollLeft=act.offsetLeft-(wrap.clientWidth/2)+(act.clientWidth/2); }); }
+}
+/* Re-point the editor at the freshest version of the current image (after a generate,
+   a version switch, or a delete) without closing the modal. */
+function ipSyncFromState(){
+  const fresh=ipState.img && imgState[ipState.img.projectImageId];
+  if(!fresh){ ipRenderHistory(); return; }
+  ipState.img=fresh;
+  ipState.seg=null; ipState.smartSel=new Set();
+  $('#ipChips').hidden=true; $('#ipChips').innerHTML='';
+  setIpMode('brush');
+  const im=$('#ipImg');
+  im.onload=()=>ipSetupCanvas(im);
+  im.src=fresh.current_url||fresh.enhanced_url||'';
+  ipRenderHistory();
+}
+async function ipSetVersion(versionId){
+  const id=ipState.img&&ipState.img.projectImageId; if(!id) return;
+  try{
+    await api('/api/version/set',{method:'POST',body:{projectImageId:id,versionId}});
+    await refreshImage(id);
+    ipSyncFromState();
+  }catch(e){ toast(e.message,true); }
+}
+async function ipDeleteCurrent(){
+  const cur=(ipState.img&&imgState[ipState.img.projectImageId])||ipState.img;
+  const id=cur&&cur.projectImageId; const vid=cur&&cur.active_version_id;
+  if(!id) return;
+  if(!vid){ toast('No saved version to remove yet',true); return; }
+  if(!confirm('Remove this version from the history? This cannot be undone.')) return;
+  try{
+    await api('/api/version/delete',{method:'POST',body:{projectImageId:id,versionId:vid}});
+    await refreshImage(id);
+    ipSyncFromState();
+    toast('Version removed');
+  }catch(e){ toast(e.message,true); }
 }
 function ipSetupCanvas(im){
   const W=im.naturalWidth||im.width, H=im.naturalHeight||im.height;
@@ -1449,9 +1526,14 @@ async function runInpaint(){
     go.textContent='Generating…';
     pollStatus('/api/inpaint-status',img.jobId,img.image_index,'inpainted_url',async()=>{
       go.disabled=false; go.textContent='Generate inpaint';
-      closeInpaintModal();
       await refreshImage(img.projectImageId);
-      toast(materialId?'Material swap saved as a new version':'Inpaint saved as a new version');
+      if($('#ipModal').classList.contains('open')){
+        ipSyncFromState();                 // stay in the editor, show the new result + history
+        $('#ipPrompt').value='';
+        toast(materialId?'Material swap saved — keep editing or close':'Inpaint saved — keep editing or close');
+      }else{
+        toast(materialId?'Material swap saved as a new version':'Inpaint saved as a new version');
+      }
     },()=>{ go.disabled=false; go.textContent='Generate inpaint'; });
   }catch(e){ go.disabled=false; go.textContent='Generate inpaint'; if(e.code!=='INSUFFICIENT_CREDITS') toast(e.message,true); }
 }
@@ -1466,6 +1548,7 @@ $('#ipChips').addEventListener('click',e=>{ const b=e.target.closest('.ip-chip')
 $('#ipSurface').addEventListener('click',e=>{ const b=e.target.closest('.ip-seg-btn'); if(b) ipSetSurface(b.dataset.surface); });
 $('#ipClear').addEventListener('click',ipClearMask);
 $('#ipGo').addEventListener('click',runInpaint);
+$('#ipTrash').addEventListener('click',ipDeleteCurrent);
 $('#ipClose').addEventListener('click',closeInpaintModal);
 $('#ipCancel').addEventListener('click',closeInpaintModal);
 $('#ipModal').addEventListener('click',e=>{ if(e.target.id==='ipModal') closeInpaintModal(); });
