@@ -1739,6 +1739,43 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+// ── Hero scroll nudge ────────────────────────────────────────────────────────
+// Gently auto-scrolls ~30% of the hero banner once per session so visitors notice
+// there's more below the fold. Cancels on any user input, skips if a modal is open,
+// if the page isn't at the top, or if the visitor prefers reduced motion.
+(function(){
+  if (sessionStorage.getItem('heroNudged') === '1') return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  let cancelled = false;
+  function cleanup(){
+    window.removeEventListener('wheel', cancel);
+    window.removeEventListener('touchmove', cancel);
+    window.removeEventListener('keydown', cancel);
+  }
+  function cancel(){ cancelled = true; cleanup(); }
+  window.addEventListener('wheel', cancel, { passive: true });
+  window.addEventListener('touchmove', cancel, { passive: true });
+  window.addEventListener('keydown', cancel);
+
+  function aModalIsOpen(){
+    return ['purchase-modal','forgot-modal','newpass-modal','changepass-modal'].some(function(id){
+      const m = document.getElementById(id);
+      return m && getComputedStyle(m).display !== 'none';
+    });
+  }
+  function nudge(){
+    if (cancelled || window.scrollY > 4 || aModalIsOpen()) { cleanup(); return; }
+    const hero = document.querySelector('.hero-banner');
+    const heroH = hero ? hero.getBoundingClientRect().height : 0;
+    const target = Math.round((heroH || window.innerHeight) * 0.30);
+    sessionStorage.setItem('heroNudged', '1');
+    window.scrollTo({ top: target, behavior: 'smooth' });
+    cleanup();
+  }
+  window.addEventListener('load', function(){ setTimeout(nudge, 1100); });
+})();
+
 // ── Auth ───────────────────────────────────────────────────────────────────
 function switchTab(tab, event) {
   currentTab = tab;
