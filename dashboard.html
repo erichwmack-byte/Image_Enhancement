@@ -1766,7 +1766,13 @@ $('#trashBack').addEventListener('click',()=>{ $('#trashView').classList.add('hi
 let lgState={card:null,img:null,logoId:null,logoUrl:null,aspect:1,drag:null};
 function cleanBaseClient(img){
   if(img.versions&&img.versions.length){
-    for(let i=img.versions.length-1;i>=0;i--){ if(img.versions[i].source!=='logo') return img.versions[i].url; }
+    // Walk back from the ACTIVE version (the one currently displayed / stepped-to in
+    // the history strip), not the newest in the chain, so the logo modal previews the
+    // image the user is actually on. We still skip logo versions so a new logo overlays
+    // the clean base beneath rather than stacking on an existing logo.
+    let start=activeIdx(img);
+    if(start<0) start=img.versions.length-1;
+    for(let i=start;i>=0;i--){ if(img.versions[i].source!=='logo') return img.versions[i].url; }
   }
   return img.enhanced_url||img.current_url||'';
 }
