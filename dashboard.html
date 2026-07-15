@@ -1343,16 +1343,33 @@ function ipRenderHistory(){
 }
 /* Re-point the editor at the freshest version of the current image (after a generate,
    a version switch, or a delete) without closing the modal. */
-function ipSyncFromState(){
+function ipSyncFromState(preserveSmart){
   const fresh=ipState.img && imgState[ipState.img.projectImageId];
   if(!fresh){ ipRenderHistory(); return; }
   ipState.img=fresh;
+  const newSrc=fresh.current_url||fresh.enhanced_url||'';
+  // After an inpaint generation the composite pins every UNMASKED pixel identical to
+  // the source and keeps the same resolution, so the detected surface masks are still
+  // valid on the new result. Keep the segmentation cache (re-pointed to the new src so
+  // we never re-segment), clear only the just-used selection, and stay in Smart mode —
+  // the user can pick another surface and generate again without re-running Smart select.
+  // The version-step / delete-version paths call this WITHOUT preserveSmart, because
+  // stepping to a different version does change geometry, so those still re-segment.
+  if(preserveSmart && ipState.seg){
+    ipState.seg.src=newSrc;
+    ipState.smartSel=new Set();
+    const im=$('#ipImg');
+    im.onload=()=>{ ipSetupCanvas(im); if(ipState.mode==='smart'){ $('#ipChips').hidden=false; ipRenderChips(); } };
+    im.src=newSrc;
+    ipRenderHistory();
+    return;
+  }
   ipState.seg=null; ipState.smartSel=new Set();
   $('#ipChips').hidden=true; $('#ipChips').innerHTML='';
   setIpMode('brush');
   const im=$('#ipImg');
   im.onload=()=>ipSetupCanvas(im);
-  im.src=fresh.current_url||fresh.enhanced_url||'';
+  im.src=newSrc;
   ipRenderHistory();
 }
 async function ipSetVersion(versionId){
@@ -1528,7 +1545,7 @@ async function runInpaint(){
       go.disabled=false; go.textContent='Generate inpaint';
       await refreshImage(img.projectImageId);
       if($('#ipModal').classList.contains('open')){
-        ipSyncFromState();                 // stay in the editor, show the new result + history
+        ipSyncFromState(true);             // stay in the editor, keep smart-select masks, show the new result + history
         $('#ipPrompt').value='';
         toast(materialId?'Material swap saved — keep editing or close':'Inpaint saved — keep editing or close');
       }else{
