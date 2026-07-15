@@ -1,2128 +1,1919 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>StudioFinish — Photo-Realistic Pool & Landscape Renders</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --aqua: #00C2C7;
-      --aqua-light: #4DDDE0;
-      --aqua-dim: rgba(0,194,199,0.10);
-      --ocean: #0077A8;
-      --ocean-deep: #004E72;
-      --yellow: #F5C842;
-      --yellow-light: #FFE080;
-      --yellow-dim: rgba(245,200,66,0.12);
-      --bg: #06101A;
-      --bg-card: #0D1E2E;
-      --bg-input: #132333;
-      --border: rgba(255,255,255,0.07);
-      --border-aqua: rgba(0,194,199,0.25);
-      --border-yellow: rgba(245,200,66,0.3);
-      --text: #E8F4F8;
-      --text-muted: #7A9BAD;
-      --text-dim: #3A5A6A;
-      --green: #2ABF7A;
-      --red: #E05252;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: 'DM Sans', sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      overflow-x: hidden;
-    }
-
-    .ambient-top {
-      position: fixed;
-      width: 900px;
-      height: 500px;
-      border-radius: 50%;
-      background: radial-gradient(ellipse, rgba(0,119,168,0.12) 0%, rgba(0,194,199,0.04) 50%, transparent 70%);
-      top: -200px;
-      left: 50%;
-      transform: translateX(-50%);
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    .ambient-bottom {
-      position: fixed;
-      width: 600px;
-      height: 300px;
-      border-radius: 50%;
-      background: radial-gradient(ellipse, rgba(0,78,114,0.15) 0%, transparent 70%);
-      bottom: -100px;
-      right: -100px;
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    /* ── LOADING OVERLAY ── */
-    #loading-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(6,16,26,0.97);
-      backdrop-filter: blur(16px);
-      z-index: 10000;
-      display: none;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      text-align: center;
-      gap: 20px;
-    }
-
-    .spinner-ring {
-      width: 64px;
-      height: 64px;
-      border: 2px solid rgba(245,200,66,0.15);
-      border-top: 2px solid var(--yellow);
-      border-radius: 50%;
-      animation: spin 1.2s cubic-bezier(0.4,0,0.2,1) infinite;
-    }
-
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    .loading-title {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 28px;
-      font-weight: 300;
-      color: var(--text);
-      letter-spacing: 2px;
-    }
-
-    .loading-sub {
-      font-size: 13px;
-      color: var(--text-muted);
-      max-width: 280px;
-      line-height: 1.6;
-    }
-
-    .loading-dots { display: flex; gap: 6px; }
-
-    .loading-dots span {
-      width: 5px;
-      height: 5px;
-      border-radius: 50%;
-      background: var(--yellow);
-      opacity: 0.3;
-      animation: pulse-dot 1.4s infinite;
-    }
-
-    .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
-    .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
-
-    @keyframes pulse-dot {
-      0%, 80%, 100% { opacity: 0.3; transform: scale(1); }
-      40% { opacity: 1; transform: scale(1.3); }
-    }
-
-    /* ── CREDIT BAR ── */
-    #credit-bar {
-      position: fixed;
-      top: 20px;
-      right: 24px;
-      display: none;
-      align-items: center;
-      gap: 10px;
-      background: rgba(13,30,46,0.95);
-      border: 1px solid var(--border-aqua);
-      padding: 8px 16px;
-      border-radius: 40px;
-      font-size: 13px;
-      z-index: 1000;
-      backdrop-filter: blur(12px);
-    }
-
-    .credit-label { color: var(--text-muted); font-size: 12px; }
-    #credit-count { color: var(--aqua); font-weight: 500; font-size: 15px; }
-
-    .divider-v { width: 1px; height: 16px; background: var(--border); }
-
-    .btn-buy {
-      background: var(--aqua);
-      color: #06101A;
-      border: none;
-      padding: 5px 14px;
-      border-radius: 20px;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 500;
-      transition: all 0.2s;
-      font-family: 'DM Sans', sans-serif;
-    }
-
-    .btn-buy:hover { background: var(--aqua-light); }
-
-    .btn-dashboard {
-      background: var(--aqua);
-      color: #06101A;
-      border: none;
-      padding: 5px 14px;
-      border-radius: 20px;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 600;
-      transition: all 0.2s;
-      font-family: 'DM Sans', sans-serif;
-      text-decoration: none;
-      display: inline-block;
-      white-space: nowrap;
-    }
-
-    .btn-dashboard:hover { filter: brightness(1.08); }
-
-    .btn-logout {
-      background: none;
-      color: var(--text-dim);
-      border: 1px solid var(--border);
-      padding: 5px 12px;
-      border-radius: 20px;
-      cursor: pointer;
-      font-size: 12px;
-      transition: all 0.2s;
-      font-family: 'DM Sans', sans-serif;
-    }
-
-    .btn-logout:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
-
-    .btn-change-pw {
-      background: none;
-      color: var(--text-dim);
-      border: none;
-      padding: 0;
-      cursor: pointer;
-      font-size: 11px;
-      font-family: 'DM Sans', sans-serif;
-      transition: color 0.2s;
-      text-decoration: underline;
-      text-underline-offset: 2px;
-      text-decoration-color: var(--text-dim);
-    }
-
-    .btn-change-pw:hover { color: var(--text-muted); text-decoration-color: var(--text-muted); }
-
-    /* ── MODALS ── */
-    #purchase-modal, #forgot-modal, #newpass-modal, #changepass-modal {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.88);
-      z-index: 9999;
-      justify-content: center;
-      align-items: center;
-      backdrop-filter: blur(8px);
-    }
-
-    .modal-box {
-      background: var(--bg-card);
-      border-radius: 16px;
-      padding: 36px;
-      width: 100%;
-      max-width: 440px;
-      border: 1px solid var(--border);
-      margin: 20px;
-    }
-
-    .modal-title {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 26px;
-      font-weight: 400;
-      color: var(--text);
-      margin-bottom: 6px;
-      text-align: center;
-    }
-
-    .modal-sub {
-      font-size: 13px;
-      color: var(--text-muted);
-      text-align: center;
-      margin-bottom: 28px;
-    }
-
-    .pack-option {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: rgba(255,255,255,0.03);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px 20px;
-      margin-bottom: 10px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .pack-option:hover { border-color: var(--border-aqua); background: var(--aqua-dim); }
-    .pack-name { font-weight: 500; font-size: 15px; color: var(--text); margin-bottom: 3px; }
-    .pack-credits { color: var(--text-muted); font-size: 12px; }
-    .pack-price { font-size: 22px; font-weight: 500; color: var(--aqua); }
-
-    .btn-close-modal {
-      width: 100%;
-      background: transparent;
-      color: var(--text-muted);
-      border: 1px solid var(--border);
-      padding: 10px;
-      border-radius: 8px;
-      cursor: pointer;
-      margin-top: 10px;
-      font-size: 13px;
-      transition: all 0.2s;
-      font-family: 'DM Sans', sans-serif;
-    }
-
-    .btn-close-modal:hover { background: rgba(255,255,255,0.05); color: var(--text); }
-
-    .reset-modal-box {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 40px;
-      width: 100%;
-      max-width: 400px;
-      margin: 20px;
-    }
-
-    .reset-modal-box h2 {
-      font-family: 'Cormorant Garamond', serif;
-      font-weight: 400;
-      font-size: 26px;
-      color: var(--text);
-      margin: 0 0 8px;
-    }
-
-    .reset-modal-box p { color: var(--text-muted); font-size: 13px; margin: 0 0 24px; line-height: 1.5; }
-
-    .reset-input {
-      width: 100%;
-      padding: 13px 16px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: var(--bg-input);
-      color: var(--text);
-      font-size: 14px;
-      margin-bottom: 12px;
-      font-family: 'DM Sans', sans-serif;
-      transition: border-color 0.2s;
-    }
-
-    .reset-input:focus { outline: none; border-color: var(--border-aqua); }
-    .reset-input::placeholder { color: var(--text-dim); }
-
-    .btn-reset-submit {
-      width: 100%;
-      padding: 13px;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      font-family: 'DM Sans', sans-serif;
-      transition: all 0.2s;
-    }
-
-    .btn-reset-blue { background: var(--aqua); color: #06101A; }
-    .btn-reset-blue:hover { background: var(--aqua-light); }
-    .btn-reset-green { background: var(--green); color: #fff; }
-    .btn-reset-green:hover { background: #22a86c; }
-
-    .reset-back-link {
-      display: block;
-      text-align: center;
-      margin-top: 18px;
-      color: var(--text-muted);
-      font-size: 13px;
-      cursor: pointer;
-      transition: color 0.2s;
-    }
-
-    .reset-back-link:hover { color: var(--text); }
-
-    /* ── LANDING PAGE ── */
-    .landing-wrapper {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 60px 24px 80px;
-    }
-
-    .hero-logo {
-      width: 520px;
-      max-width: 90vw;
-      height: auto;
-      margin-bottom: 8px;
-      border-radius: 4px;
-    }
-
-    /* Full-bleed hero banner: 100vw spans the viewport (body has overflow-x:hidden),
-       the flex wrapper centers it, and the negative top margin cancels the wrapper's
-       60px top padding so it sits flush against the top. */
-    .hero-banner {
-      display: block;
-      width: 100vw;
-      max-width: 100vw;
-      height: auto;
-      margin: -60px 0 36px;
-      align-self: center;
-    }
-
-    .aqua-rule {
-      width: 60px;
-      height: 1px;
-      background: linear-gradient(90deg, transparent, var(--yellow), transparent);
-      margin: 0 auto 40px;
-    }
-
-    .hero-section {
-      text-align: center;
-      max-width: 600px;
-      margin-bottom: 52px;
-      animation: fadeUp 0.8s ease both;
-    }
-
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(20px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .hero-eyebrow {
-      font-size: 11px;
-      font-weight: 500;
-      letter-spacing: 3px;
-      text-transform: uppercase;
-      color: var(--yellow);
-      margin-bottom: 16px;
-    }
-
-    .hero-headline {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: clamp(34px, 5vw, 54px);
-      font-weight: 300;
-      line-height: 1.15;
-      color: var(--text);
-      margin-bottom: 20px;
-      letter-spacing: -0.5px;
-    }
-
-    .hero-headline em { font-style: italic; color: var(--yellow-light); }
-
-    .hero-body {
-      font-size: 15px;
-      color: var(--text-muted);
-      line-height: 1.75;
-      max-width: 500px;
-      margin: 0 auto;
-    }
-
-    /* ── BEFORE / AFTER SLIDER ── */
-    .before-after-section {
-      width: 100%;
-      max-width: 780px;
-      margin-bottom: 52px;
-      animation: fadeUp 0.8s 0.1s ease both;
-    }
-
-    .before-after-section .section-label {
-      text-align: center;
-      margin-bottom: 24px;
-    }
-
-    .slider-wrapper {
-      position: relative;
-      width: 100%;
-      border-radius: 14px;
-      overflow: hidden;
-      border: 1px solid var(--border-aqua);
-      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-      user-select: none;
-      cursor: col-resize;
-      background: #000;
-    }
-
-    .slider-wrapper img {
-      display: block;
-      width: 100%;
-      height: auto;
-      pointer-events: none;
-    }
-
-    /* After image — full width, sits behind */
-    .img-after {
-      display: block;
-      width: 100%;
-    }
-
-    /* Before image — clipped by reveal amount */
-    .img-before-wrap {
-      position: absolute;
-      top: 0;
-      left: 0;
-      height: 100%;
-      overflow: hidden;
-      width: 50%;
-    }
-
-    .img-before-wrap img {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: var(--slider-full-width, 100%);
-      height: 100%;
-      object-fit: cover;
-    }
-
-    /* Divider line */
-    .slider-divider {
-      position: absolute;
-      top: 0;
-      bottom: 0;
-      left: 50%;
-      width: 2px;
-      background: #fff;
-      transform: translateX(-50%);
-      pointer-events: none;
-      box-shadow: 0 0 8px rgba(0,0,0,0.6);
-    }
-
-    /* Drag handle */
-    .slider-handle {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      width: 44px;
-      height: 44px;
-      background: #fff;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.5);
-      pointer-events: none;
-      z-index: 10;
-    }
-
-    .slider-handle svg {
-      width: 20px;
-      height: 20px;
-      fill: #06101A;
-    }
-
-    /* Labels */
-    .slider-label {
-      position: absolute;
-      top: 14px;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      padding: 4px 12px;
-      border-radius: 20px;
-      pointer-events: none;
-      z-index: 5;
-    }
-
-    .slider-label-before {
-      left: 14px;
-      background: rgba(0,0,0,0.55);
-      color: #fff;
-      border: 1px solid rgba(255,255,255,0.2);
-    }
-
-    .slider-label-after {
-      right: 14px;
-      background: rgba(0,194,199,0.25);
-      color: var(--aqua-light);
-      border: 1px solid var(--border-aqua);
-    }
-
-    /* Navigation row */
-    .slider-nav {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      margin-top: 20px;
-    }
-
-    .slider-nav-btn {
-      width: 40px;
-      height: 40px;
-      border-radius: 50%;
-      background: var(--bg-card);
-      border: 1px solid var(--border-aqua);
-      color: var(--aqua);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s;
-      font-size: 18px;
-      line-height: 1;
-    }
-
-    .slider-nav-btn:hover {
-      background: var(--aqua-dim);
-      border-color: var(--aqua);
-      transform: scale(1.08);
-    }
-
-    .slider-dots {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-
-    .slider-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--text-dim);
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .slider-dot.active {
-      background: var(--aqua);
-      transform: scale(1.3);
-    }
-
-    .slider-caption {
-      text-align: center;
-      font-size: 12px;
-      color: var(--text-dim);
-      margin-top: 12px;
-      letter-spacing: 0.5px;
-    }
-
-    /* Stats row */
-    .stats-row {
-      display: flex;
-      border: 1px solid var(--border-yellow);
-      border-radius: 12px;
-      overflow: hidden;
-      margin-bottom: 52px;
-      animation: fadeUp 0.8s 0.15s ease both;
-      background: rgba(245,200,66,0.03);
-    }
-
-    .stat-item {
-      flex: 1;
-      padding: 20px 28px;
-      text-align: center;
-      border-right: 1px solid var(--border-yellow);
-    }
-
-    .stat-item:last-child { border-right: none; }
-
-    .stat-num {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 32px;
-      font-weight: 400;
-      color: var(--yellow);
-      display: block;
-      line-height: 1;
-      margin-bottom: 6px;
-    }
-
-    .stat-label {
-      font-size: 11px;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 1.5px;
-    }
-
-    /* How it works */
-    .how-section {
-      max-width: 620px;
-      width: 100%;
-      margin-bottom: 52px;
-      animation: fadeUp 0.8s 0.25s ease both;
-    }
-
-    .section-label {
-      font-size: 11px;
-      font-weight: 500;
-      letter-spacing: 3px;
-      text-transform: uppercase;
-      color: var(--yellow);
-      text-align: center;
-      margin-bottom: 28px;
-    }
-
-    .steps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-
-    .step-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 24px 20px;
-      text-align: center;
-      transition: border-color 0.3s, background 0.3s;
-    }
-
-    .step-card:hover { border-color: var(--border-aqua); background: rgba(0,194,199,0.04); }
-
-    .step-num {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      border: 1px solid var(--border-yellow);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 16px;
-      color: var(--yellow);
-      margin: 0 auto 14px;
-    }
-
-    .step-title { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 8px; }
-    .step-body { font-size: 12px; color: var(--text-muted); line-height: 1.55; }
-
-    /* ── AUTH PANEL ── */
-    #auth-panel {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 36px;
-      width: 100%;
-      max-width: 400px;
-      animation: fadeUp 0.8s 0.3s ease both;
-    }
-
-    .auth-header { text-align: center; margin-bottom: 28px; }
-
-    .auth-header h2 {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 28px;
-      font-weight: 400;
-      color: var(--text);
-      margin-bottom: 6px;
-    }
-
-    .auth-header p { font-size: 13px; color: var(--text-muted); }
-
-    .auth-tabs {
-      display: flex;
-      background: rgba(255,255,255,0.04);
-      border-radius: 8px;
-      padding: 4px;
-      margin-bottom: 24px;
-    }
-
-    .auth-tab {
-      flex: 1;
-      padding: 9px;
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      font-size: 14px;
-      cursor: pointer;
-      border-radius: 6px;
-      transition: all 0.2s;
-      font-family: 'DM Sans', sans-serif;
-    }
-
-    .auth-tab.active { background: var(--bg-input); color: var(--text); font-weight: 500; }
-
-    .auth-error {
-      background: rgba(224,82,82,0.1);
-      border: 1px solid rgba(224,82,82,0.25);
-      border-radius: 6px;
-      color: #ff8080;
-      font-size: 13px;
-      padding: 10px 14px;
-      margin-bottom: 16px;
-      display: none;
-      line-height: 1.4;
-    }
-
-    .auth-input {
-      width: 100%;
-      padding: 13px 16px;
-      background: var(--bg-input);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      margin-bottom: 12px;
-      font-size: 14px;
-      font-family: 'DM Sans', sans-serif;
-      transition: border-color 0.2s;
-    }
-
-    .auth-input:focus { outline: none; border-color: var(--border-aqua); }
-    .auth-input::placeholder { color: var(--text-dim); }
-
-    #auth-btn {
-      width: 100%;
-      padding: 14px;
-      font-size: 14px;
-      font-weight: 500;
-      background: var(--aqua);
-      border: none;
-      border-radius: 8px;
-      color: #06101A;
-      cursor: pointer;
-      transition: all 0.2s;
-      font-family: 'DM Sans', sans-serif;
-      letter-spacing: 0.3px;
-    }
-
-    #auth-btn:hover { background: var(--aqua-light); }
-
-    .forgot-link {
-      display: block;
-      text-align: center;
-      margin-top: 16px;
-      color: var(--text-dim);
-      font-size: 13px;
-      cursor: pointer;
-      transition: color 0.2s;
-    }
-
-    .forgot-link:hover { color: var(--text-muted); }
-
-    .terms-row { display: none; margin-bottom: 14px; }
-
-    .terms-row label {
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      cursor: pointer;
-      text-transform: none;
-      letter-spacing: 0;
-      font-size: 13px;
-      color: var(--text-muted);
-      font-weight: 400;
-      line-height: 1.5;
-    }
-
-    .terms-row input[type="checkbox"] {
-      width: auto;
-      min-width: 16px;
-      height: 16px;
-      margin-top: 2px;
-      accent-color: var(--aqua);
-      cursor: pointer;
-      padding: 0;
-    }
-
-    .terms-row a { color: var(--aqua); text-decoration: none; transition: color 0.2s; }
-    .terms-row a:hover { color: var(--aqua-light); }
-
-    /* ── ENHANCEMENT FORM ── */
-    #enhancement-form {
-      display: none;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 36px;
-      width: 100%;
-      max-width: 520px;
-      position: relative;
-      z-index: 1;
-    }
-
-    .form-header { margin-bottom: 28px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
-
-    .form-eyebrow {
-      font-size: 11px;
-      font-weight: 500;
-      letter-spacing: 3px;
-      text-transform: uppercase;
-      color: var(--yellow);
-      margin-bottom: 8px;
-    }
-
-    .form-title {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 28px;
-      font-weight: 400;
-      color: var(--text);
-    }
-
-    .instructions-box {
-      background: rgba(0,194,199,0.05);
-      border: 1px solid var(--border-aqua);
-      border-radius: 8px;
-      padding: 16px 18px;
-      margin-bottom: 24px;
-      font-size: 13px;
-      line-height: 1.6;
-      color: var(--text-muted);
-    }
-
-    .instructions-box strong {
-      color: var(--yellow);
-      font-weight: 500;
-      display: block;
-      margin-bottom: 8px;
-      font-size: 11px;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-    }
-
-    .instructions-box ul { padding-left: 16px; }
-    .instructions-box li { margin-bottom: 4px; }
-
-    .form-group { margin-bottom: 20px; }
-
-    label {
-      display: block;
-      margin-bottom: 8px;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-
-    input[type="text"], select, input[type="file"] {
-      width: 100%;
-      padding: 12px 16px;
-      background: var(--bg-input);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      font-family: 'DM Sans', sans-serif;
-      font-size: 14px;
-      transition: border-color 0.2s;
-      appearance: none;
-    }
-
-    input[type="text"]:focus, select:focus { outline: none; border-color: var(--border-aqua); }
-    input[type="text"]::placeholder { color: var(--text-dim); }
-
-    select {
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%233A5A6A' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 14px center;
-      padding-right: 36px;
-      cursor: pointer;
-    }
-
-    select option { background: #132333; }
-    input[type="file"] { cursor: pointer; color: var(--text-muted); font-size: 13px; }
-
-    input[type="file"]::-webkit-file-upload-button {
-      background: var(--bg);
-      border: 1px solid var(--border-aqua);
-      color: var(--aqua);
-      padding: 6px 14px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 12px;
-      margin-right: 12px;
-    }
-
-    button[type="submit"] {
-      width: 100%;
-      padding: 15px;
-      font-size: 15px;
-      font-weight: 500;
-      background: var(--aqua);
-      border: none;
-      border-radius: 8px;
-      color: #06101A;
-      cursor: pointer;
-      transition: all 0.2s;
-      margin-top: 8px;
-      font-family: 'DM Sans', sans-serif;
-      letter-spacing: 0.5px;
-    }
-
-    button[type="submit"]:hover { background: var(--aqua-light); transform: translateY(-1px); }
-
-    .tips-box {
-      background: transparent;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px 18px;
-      margin-top: 20px;
-      font-size: 12px;
-      line-height: 1.6;
-      color: var(--text-dim);
-    }
-
-    .tips-box strong {
-      color: var(--text-muted);
-      font-size: 11px;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      display: block;
-      margin-bottom: 8px;
-    }
-
-    .tips-box ul { padding-left: 16px; }
-    .tips-box li { margin-bottom: 3px; }
-
-    /* ── FOOTER ── */
-    .landing-footer {
-      text-align: center;
-      padding: 40px 24px;
-      border-top: 1px solid var(--border);
-      color: var(--text-dim);
-      font-size: 12px;
-      letter-spacing: 0.5px;
-      position: relative;
-      z-index: 1;
-    }
-
-    .footer-brand {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 16px;
-      color: var(--yellow);
-      letter-spacing: 3px;
-      text-transform: uppercase;
-      margin-bottom: 8px;
-    }
-
-    /* ── PRICING SECTION ── */
-    .pricing-section {
-      max-width: 620px;
-      width: 100%;
-      margin-bottom: 52px;
-      animation: fadeUp 0.8s 0.3s ease both;
-    }
-
-    .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-
-    .pricing-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 24px 20px;
-      text-align: center;
-      transition: all 0.25s;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .pricing-card:hover { border-color: var(--border-aqua); background: rgba(0,194,199,0.04); transform: translateY(-2px); }
-
-    .pricing-card.featured { border-color: var(--border-yellow); background: rgba(245,200,66,0.04); }
-    .pricing-card.featured:hover { border-color: var(--yellow); }
-
-    .pricing-badge {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      background: var(--yellow);
-      color: #06101A;
-      font-size: 9px;
-      font-weight: 600;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      padding: 3px 8px;
-      border-radius: 20px;
-    }
-
-    .pricing-name { font-size: 11px; font-weight: 500; letter-spacing: 2px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 12px; }
-    .pricing-price { font-family: 'Cormorant Garamond', serif; font-size: 40px; font-weight: 300; color: var(--aqua); line-height: 1; margin-bottom: 4px; }
-    .pricing-card.featured .pricing-price { color: var(--yellow); }
-    .pricing-per { font-size: 11px; color: var(--text-dim); margin-bottom: 16px; }
-    .pricing-divider { width: 100%; height: 1px; background: var(--border); margin-bottom: 16px; }
-    .pricing-credits { font-size: 18px; font-weight: 500; color: var(--text); margin-bottom: 4px; }
-    .pricing-breakdown { font-size: 11px; color: var(--text-dim); line-height: 1.6; }
-
-    /* ── VIDEO SECTION ── */
-    .video-section {
-      width: 100%;
-      max-width: 780px;
-      margin-bottom: 52px;
-      animation: fadeUp 0.8s 0.2s ease both;
-    }
-
-    .video-section .section-label { text-align: center; margin-bottom: 10px; }
-
-    .video-tagline {
-      text-align: center;
-      font-size: 14px;
-      color: var(--text-muted);
-      line-height: 1.7;
-      max-width: 560px;
-      margin: 0 auto 24px;
-    }
-
-    .video-tagline em {
-      color: var(--aqua-light);
-      font-style: italic;
-    }
-
-    .video-container {
-      position: relative;
-      width: 100%;
-      border-radius: 14px;
-      overflow: hidden;
-      border: 1px solid var(--border-aqua);
-      box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-      background: #000;
-      cursor: pointer;
-    }
-
-    .video-container video {
-      display: block;
-      width: 100%;
-      height: auto;
-    }
-
-    /* Custom play overlay shown before video starts */
-    .video-play-overlay {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: rgba(6,16,26,0.55);
-      backdrop-filter: blur(2px);
-      transition: opacity 0.3s;
-      z-index: 5;
-    }
-
-    .video-play-overlay.hidden { opacity: 0; pointer-events: none; }
-
-    .video-play-btn {
-      width: 72px;
-      height: 72px;
-      border-radius: 50%;
-      background: rgba(0,194,199,0.15);
-      border: 2px solid var(--aqua);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.25s;
-      margin-bottom: 14px;
-    }
-
-    .video-play-btn svg {
-      width: 28px;
-      height: 28px;
-      fill: var(--aqua);
-      margin-left: 4px;
-    }
-
-    .video-container:hover .video-play-btn {
-      background: rgba(0,194,199,0.28);
-      transform: scale(1.08);
-    }
-
-    .video-play-label {
-      font-size: 12px;
-      font-weight: 500;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      color: var(--text);
-    }
-
-    .video-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      margin-top: 16px;
-      background: rgba(0,194,199,0.08);
-      border: 1px solid var(--border-aqua);
-      border-radius: 20px;
-      padding: 6px 16px;
-      font-size: 12px;
-      color: var(--aqua);
-      letter-spacing: 0.5px;
-    }
-
-    .video-badge::before {
-      content: '';
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--aqua);
-      animation: pulse-dot 1.8s infinite;
-    }
-
-    /* Responsive */
-    @media (max-width: 600px) {
-      .pricing-grid { grid-template-columns: 1fr; }
-      .steps-grid { grid-template-columns: 1fr; }
-      .stats-row { flex-direction: column; }
-      .stat-item { border-right: none; border-bottom: 1px solid var(--border-yellow); }
-      .stat-item:last-child { border-bottom: none; }
-      #auth-panel, #enhancement-form { padding: 28px 24px; }
-      .hero-headline { font-size: 32px; }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Studio — Your Albums</title>
+<style>
+  :root{
+    /* Ocean palette (cohesive with the marketing site) */
+    --bg:#06101A;
+    --bg-2:#081826;
+    --surface:rgba(255,255,255,.045);
+    --surface-2:rgba(255,255,255,.07);
+    --hairline:rgba(255,255,255,.09);
+    --hairline-strong:rgba(255,255,255,.16);
+    --aqua:#00C2C7;
+    --aqua-soft:rgba(0,194,199,.16);
+    --ocean:#0077A8;
+    --yellow:#F5C842;
+    --text:#EAF4F8;
+    --text-muted:#8AA6B6;
+    --text-dim:#4A6675;
+    --red:#E0625A;
+    --green:#2ABF7A;
+    /* Apple-grade craft */
+    --r-lg:24px; --r-md:16px; --r-sm:11px;
+    --ease:cubic-bezier(.22,.61,.36,1);
+    --shadow:0 12px 40px rgba(0,0,0,.45);
+    --shadow-hi:0 22px 60px rgba(0,0,0,.55);
+    --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",system-ui,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:var(--font);
+    color:var(--text);
+    background:
+      radial-gradient(1100px 700px at 78% -8%, rgba(0,119,168,.20), transparent 60%),
+      radial-gradient(900px 600px at 6% 4%, rgba(0,194,199,.10), transparent 55%),
+      var(--bg);
+    -webkit-font-smoothing:antialiased;
+    letter-spacing:-.01em;
+    min-height:100%;
+  }
+  img{display:block;max-width:100%}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  a{color:inherit;text-decoration:none}
+  :focus-visible{outline:2px solid var(--aqua);outline-offset:2px;border-radius:6px}
+
+  /* ── Top bar ── */
+  .topbar{
+    position:sticky;top:0;z-index:40;
+    display:flex;align-items:center;gap:16px;
+    padding:14px clamp(18px,4vw,40px);
+    background:rgba(6,16,26,.62);
+    backdrop-filter:blur(22px) saturate(160%);
+    -webkit-backdrop-filter:blur(22px) saturate(160%);
+    border-bottom:1px solid var(--hairline);
+  }
+  .brand{display:flex;align-items:center;gap:11px;font-weight:600;font-size:17px}
+  .brand .dot{width:11px;height:11px;border-radius:50%;
+    background:radial-gradient(circle at 30% 30%,var(--aqua),var(--ocean));
+    box-shadow:0 0 16px var(--aqua-soft)}
+  .brand small{color:var(--text-muted);font-weight:500}
+  .spacer{flex:1}
+  .credits{
+    display:flex;align-items:center;gap:7px;
+    padding:8px 14px;border-radius:999px;
+    background:var(--surface);border:1px solid var(--hairline);
+    font-size:13.5px;font-weight:600;
+  }
+  .credits b{color:var(--yellow)}
+  .ghost-btn{
+    padding:8px 15px;border-radius:999px;font-size:13.5px;font-weight:600;
+    background:var(--surface);border:1px solid var(--hairline);
+    transition:background .25s var(--ease),border-color .25s var(--ease);
+  }
+  .ghost-btn:hover{background:var(--surface-2);border-color:var(--hairline-strong)}
+
+  /* ── Layout shell ── */
+  .wrap{max-width:1320px;margin:0 auto;padding:clamp(22px,4vw,46px) clamp(18px,4vw,40px) 96px}
+  .page-head{display:flex;align-items:flex-end;gap:18px;margin-bottom:30px}
+  .page-head h1{font-size:clamp(26px,4vw,38px);font-weight:700;letter-spacing:-.03em}
+  .page-head p{color:var(--text-muted);font-size:15px;margin-top:6px}
+  .back{
+    display:inline-flex;align-items:center;gap:8px;margin-bottom:18px;
+    color:var(--text-muted);font-size:14.5px;font-weight:600;
+    transition:color .2s var(--ease),transform .2s var(--ease);
+  }
+  .back:hover{color:var(--text);transform:translateX(-2px)}
+
+  /* ── Album tiles ── */
+  .album-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:26px}
+  @media (max-width:520px){ .album-grid{grid-template-columns:1fr} }
+  /* "build your Library" banner (albums view) */
+  .lib-banner{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:24px;
+    padding:14px 18px;border-radius:var(--r-md);
+    background:linear-gradient(90deg,var(--aqua-soft),rgba(0,119,168,.10));
+    border:1px solid var(--hairline-strong)}
+  .lib-banner-txt{flex:1;min-width:220px;font-size:14px;line-height:1.5;color:var(--text)}
+  .lib-banner-txt b{font-weight:700}
+  .lib-banner-actions{display:flex;align-items:center;gap:10px}
+  .lib-banner-x{width:30px;height:30px;border-radius:8px;background:var(--surface);
+    border:1px solid var(--hairline);color:var(--text-muted);font-size:13px}
+  .lib-banner-x:hover{background:var(--surface-2);color:var(--text)}
+  /* album sort control */
+  .album-sort{margin-left:auto}
+  /* library (reusable assets — deliberately distinct from album tiles) */
+  .lib-tabs{display:flex;gap:6px;margin-bottom:26px;border-bottom:1px solid var(--hairline)}
+  .lib-tab{padding:10px 16px;font-size:14px;font-weight:600;color:var(--text-muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .2s var(--ease),border-color .2s var(--ease)}
+  .lib-tab:hover{color:var(--text)}
+  .lib-tab.active{color:var(--text);border-bottom-color:var(--aqua)}
+  .asset-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:18px}
+  .asset{position:relative;border-radius:var(--r-md);overflow:hidden;background:var(--surface);border:1px solid var(--hairline);transition:border-color .2s var(--ease)}
+  .asset:hover{border-color:var(--hairline-strong)}
+  .asset-img{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;overflow:hidden;
+    background:repeating-conic-gradient(#16242f 0% 25%,#0f1c26 0% 50%) 50% / 22px 22px}
+  .asset-img img{max-width:78%;max-height:78%;object-fit:contain}
+  .asset-name{padding:8px 11px;font-size:12.5px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .asset-del{position:absolute;top:8px;right:8px;width:28px;height:28px;border-radius:8px;
+    background:rgba(6,16,26,.72);border:1px solid var(--hairline);color:var(--text);
+    display:grid;place-items:center;font-size:13px;opacity:0;transition:opacity .2s var(--ease)}
+  .asset:hover .asset-del{opacity:1}
+  .asset-add{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+    aspect-ratio:1/1;border:1.5px dashed var(--hairline-strong);border-radius:var(--r-md);
+    color:var(--text-muted);cursor:pointer;background:var(--surface);transition:all .2s var(--ease);font-size:13px}
+  .asset-add:hover{border-color:var(--aqua);color:var(--text)}
+  .asset-add .plus{font-size:26px;line-height:1}
+  .tile{
+    position:relative;border-radius:var(--r-lg);overflow:hidden;
+    background:var(--surface);border:1px solid var(--hairline);
+    box-shadow:var(--shadow);
+    transition:transform .4s var(--ease),box-shadow .4s var(--ease),border-color .3s var(--ease);
+    cursor:pointer;
+  }
+  .tile:hover{transform:translateY(-6px);box-shadow:var(--shadow-hi);border-color:var(--hairline-strong)}
+  .tile-cover{aspect-ratio:16/10;background:var(--bg-2);overflow:hidden;position:relative}
+  .tile-cover img{width:100%;height:100%;object-fit:cover;transition:transform .6s var(--ease)}
+  .tile:hover .tile-cover img{transform:scale(1.045)}
+  .tile-cover.empty{display:flex;align-items:center;justify-content:center;color:var(--text-dim);font-size:13px}
+  .tile-scrim{position:absolute;inset:0;background:linear-gradient(to top,rgba(6,16,26,.86) 4%,transparent 46%)}
+  .tile-body{position:absolute;left:0;right:0;bottom:0;padding:15px 16px;display:flex;align-items:flex-end;gap:10px}
+  .tile-body .meta{flex:1;min-width:0}
+  .tile-body h3{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile-body .sub{color:var(--text-muted);font-size:12.5px;margin-top:3px}
+  .tile-rename{
+    opacity:0;flex:0 0 auto;width:32px;height:32px;border-radius:10px;
+    background:rgba(6,16,26,.5);border:1px solid var(--hairline);
+    display:grid;place-items:center;transition:opacity .25s var(--ease),background .2s var(--ease);
+  }
+  .tile:hover .tile-rename{opacity:1}
+  .tile-rename:hover{background:rgba(6,16,26,.8)}
+  .status-dot{position:absolute;top:13px;left:13px;display:flex;align-items:center;gap:6px;
+    padding:5px 10px;border-radius:999px;background:rgba(6,16,26,.55);
+    backdrop-filter:blur(8px);font-size:11.5px;font-weight:600;color:var(--text-muted)}
+  .status-dot i{width:7px;height:7px;border-radius:50%;background:var(--text-dim)}
+  .status-dot.done i{background:var(--green);box-shadow:0 0 9px rgba(42,191,122,.7)}
+  .status-dot.proc i{background:var(--yellow);box-shadow:0 0 9px rgba(245,200,66,.7)}
+
+  /* ── Image cards (album detail) ── */
+  .card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:24px}
+  .card{
+    border-radius:var(--r-lg);overflow:hidden;
+    background:var(--surface);border:1px solid var(--hairline);box-shadow:var(--shadow);
+    display:flex;flex-direction:column;
+  }
+  .stage{position:relative;background:var(--bg-2);aspect-ratio:3/2;overflow:hidden}
+  .stage>img{width:100%;height:100%;object-fit:cover}
+  .badge{position:absolute;top:12px;right:12px;padding:5px 11px;border-radius:999px;
+    font-size:11.5px;font-weight:700;letter-spacing:.02em;
+    background:rgba(6,16,26,.55);backdrop-filter:blur(8px);border:1px solid var(--hairline)}
+  .badge.k4{color:var(--yellow);border-color:rgba(245,200,66,.4)}
+  .expand{position:absolute;top:12px;left:12px;width:34px;height:34px;border-radius:10px;
+    background:rgba(6,16,26,.5);backdrop-filter:blur(8px);border:1px solid var(--hairline);
+    display:grid;place-items:center;opacity:0;transition:opacity .25s var(--ease)}
+  .stage:hover .expand{opacity:1}
+
+  /* compare slider */
+  .compare{position:absolute;inset:0;user-select:none;touch-action:none}
+  .compare img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .compare .top{clip-path:inset(0 calc(100% - var(--pct,50%)) 0 0)}
+  .cmp-divider{position:absolute;top:0;bottom:0;left:var(--pct,50%);width:2px;
+    background:rgba(255,255,255,.85);transform:translateX(-1px);box-shadow:0 0 12px rgba(0,0,0,.5)}
+  .cmp-handle{position:absolute;top:50%;left:var(--pct,50%);transform:translate(-50%,-50%);
+    width:38px;height:38px;border-radius:50%;background:rgba(6,16,26,.7);backdrop-filter:blur(6px);
+    border:1.5px solid rgba(255,255,255,.85);display:grid;place-items:center;font-size:13px;color:#fff;pointer-events:none}
+  .cmp-range{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:ew-resize;margin:0}
+  .cmp-tag{position:absolute;bottom:12px;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;
+    background:rgba(6,16,26,.6);backdrop-filter:blur(6px);letter-spacing:.04em}
+  .cmp-tag.l{left:12px;color:var(--text)} .cmp-tag.r{right:12px;color:var(--aqua)}
+
+  .card-body{padding:15px 16px 17px;display:flex;flex-direction:column;gap:13px;min-width:0}
+  .card-title-row{display:flex;align-items:center;gap:10px}
+  .card-title-row h4{font-size:15px;font-weight:600;flex:1}
+  .pick-row{display:flex;gap:9px}
+  .pick-row button{
+    flex:1;padding:10px;border-radius:var(--r-sm);font-size:13px;font-weight:600;
+    background:var(--surface-2);border:1px solid var(--hairline);transition:.2s var(--ease);
+  }
+  .pick-row button:hover{border-color:var(--aqua);color:var(--aqua)}
+  .pick-row button.active{background:var(--aqua);color:#04222b;border-color:transparent}
+  .pick-row button[disabled]{opacity:.4;cursor:not-allowed}
+
+  .tool{display:flex;gap:9px;align-items:stretch}
+  .refine-in{
+    flex:1;resize:none;border-radius:var(--r-sm);padding:10px 12px;font-size:13px;line-height:1.45;
+    background:var(--bg-2);border:1px solid var(--hairline);color:var(--text);font-family:inherit;
+    transition:border-color .2s var(--ease);
+  }
+  .refine-in:focus{outline:none;border-color:var(--aqua)}
+  .refine-in::placeholder{color:var(--text-dim)}
+  .btn{
+    border-radius:var(--r-sm);font-size:13px;font-weight:600;padding:10px 14px;white-space:nowrap;
+    border:1px solid var(--hairline);background:var(--surface-2);transition:.2s var(--ease);
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  }
+  .btn:hover:not([disabled]){border-color:var(--hairline-strong);background:rgba(255,255,255,.1)}
+  .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .btn.primary{background:var(--aqua);color:#04222b;border-color:transparent}
+  .btn.primary:hover:not([disabled]){filter:brightness(1.08)}
+  .btn-row{display:flex;gap:9px;flex-wrap:wrap}
+  .btn.icon{padding:10px 12px}
+  .btn.wide{flex:1}
+  /* stacked, self-describing action groups in the image card */
+  .tool-group{display:flex;flex-direction:column;gap:8px}
+  .tool-hint{font-size:12px;line-height:1.5;color:var(--text-muted);margin:0}
+  .tool-hint .eg{display:block;margin-top:5px;color:var(--text-dim);font-style:italic;font-size:11.5px}
+  .btn-row.pair{flex-wrap:nowrap}
+  .btn-row.pair .btn{flex:1}
+  .share-row .btn{flex:1}
+
+  .history{display:flex;align-items:center;gap:9px;min-width:0}
+  .hist-nav{display:flex;gap:6px}
+  .hist-strip{display:flex;gap:7px;overflow-x:auto;padding:2px 0;flex:1;min-width:0;scroll-behavior:smooth;scrollbar-width:none}
+  .hist-strip::-webkit-scrollbar{display:none}
+  .hist-thumb{flex:0 0 auto;width:80px;height:80px;border-radius:12px;overflow:hidden;
+    border:2px solid transparent;opacity:.6;transition:.2s var(--ease);position:relative}
+  .hist-thumb img{width:100%;height:100%;object-fit:cover}
+  .hist-thumb:hover{opacity:1}
+  .hist-thumb.active{opacity:1;border-color:var(--aqua)}
+  .hist-thumb span{position:absolute;bottom:0;right:0;font-size:10px;font-weight:700;
+    padding:1px 4px;background:rgba(6,16,26,.75);border-top-left-radius:6px;color:var(--text-muted)}
+  .divider{height:1px;background:var(--hairline);margin:1px 0}
+  .muted{color:var(--text-muted);font-size:12.5px}
+
+  /* async-heal "generating alternate" pill */
+  .heal-hint{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;
+    font-size:11px;font-weight:600;color:var(--text-muted);
+    padding:5px 10px;border-radius:999px;background:var(--surface);border:1px solid var(--hairline)}
+  .heal-hint::before{content:"";width:7px;height:7px;border-radius:50%;
+    background:var(--aqua);box-shadow:0 0 8px var(--aqua-soft);animation:heal-pulse 1.2s var(--ease) infinite}
+  @keyframes heal-pulse{0%,100%{opacity:.35}50%{opacity:1}}
+
+  /* enhance-in-progress card state (auto-load straight after a batch) */
+  .proc-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:11px;
+    background:linear-gradient(180deg,rgba(8,24,38,.45),rgba(6,16,26,.72));color:var(--text-muted);font-size:12.5px;font-weight:600;letter-spacing:.02em}
+  .proc-overlay .spin{width:26px;height:26px;border-radius:50%;border:2.5px solid var(--hairline);border-top-color:var(--aqua);animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .card.is-processing .card-body{opacity:.45;pointer-events:none;filter:saturate(.55)}
+
+  /* animate row */
+  .anim{display:flex;gap:9px}
+  .anim input{flex:1;border-radius:var(--r-sm);padding:10px 12px;font-size:13px;
+    background:var(--bg-2);border:1px solid var(--hairline);color:var(--text)}
+  .anim input:focus{outline:none;border-color:var(--aqua)}
+  .anim input::placeholder{color:var(--text-dim)}
+
+  /* empty / loading */
+  .empty{text-align:center;padding:80px 20px;color:var(--text-muted)}
+  .empty h2{color:var(--text);font-size:21px;font-weight:600;margin-bottom:8px}
+  .empty a{color:var(--aqua);font-weight:600}
+  .skeleton{border-radius:var(--r-lg);background:linear-gradient(100deg,var(--surface) 30%,var(--surface-2) 50%,var(--surface) 70%);
+    background-size:200% 100%;animation:sk 1.4s infinite linear;aspect-ratio:16/10}
+  @keyframes sk{to{background-position:-200% 0}}
+
+  /* lightbox */
+  .lightbox{position:fixed;inset:0;z-index:60;background:rgba(3,9,15,.92);
+    backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:30px}
+  .lightbox.open{display:flex}
+  .lightbox img{max-width:94vw;max-height:90vh;border-radius:14px;box-shadow:var(--shadow-hi)}
+
+  /* compare modal (pop-out) */
+  .cmp-modal{position:fixed;inset:0;z-index:65;background:rgba(3,9,15,.93);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    display:none;align-items:center;justify-content:center;padding:24px}
+  .cmp-modal.open{display:flex}
+  .cmp-modal-inner{width:min(1080px,95vw);display:flex;flex-direction:column;gap:16px}
+  .cmp-modal-head{display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:600;color:var(--text-muted)}
+  .cmp-close{width:36px;height:36px;border-radius:10px;background:var(--surface);border:1px solid var(--hairline);color:var(--text);font-size:15px}
+  .cmp-close:hover{background:var(--surface-2)}
+  .cmp-stage-wrap{position:relative;width:100%;aspect-ratio:3/2;max-height:72vh;border-radius:18px;overflow:hidden;background:var(--bg-2);box-shadow:var(--shadow-hi)}
+  .cmp-modal-actions{display:flex;gap:12px}
+  .cmp-modal-actions .btn{flex:1;padding:14px;font-size:14px}
+  .cmp-modal-actions .btn.active{background:var(--aqua);color:#04222b;border-color:transparent}
+  @media (max-width:560px){ .cmp-stage-wrap{aspect-ratio:1/1} .cmp-modal-actions{flex-direction:column} }
+
+  /* inpaint modal (mask editor) */
+  .ip-modal{position:fixed;inset:0;z-index:66;background:rgba(3,9,15,.93);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    display:none;align-items:center;justify-content:center;padding:24px}
+  .ip-modal.open{display:flex}
+  .ip-modal-inner{width:min(1100px,96vw);max-height:94vh;overflow:auto;display:flex;flex-direction:column;gap:14px}
+  .ip-head{display:flex;align-items:center;justify-content:space-between;font-size:15px;font-weight:600;color:var(--text-muted);gap:12px}
+  .ip-close{width:36px;height:36px;border-radius:10px;background:var(--surface);border:1px solid var(--hairline);color:var(--text);font-size:15px;flex:none}
+  .ip-close:hover{background:var(--surface-2)}
+  .ip-stage{position:relative;align-self:center;max-width:100%;line-height:0;border-radius:16px;overflow:hidden;background:var(--bg-2);box-shadow:var(--shadow-hi)}
+  .ip-stage img{display:block;max-width:100%;max-height:64vh;width:auto;height:auto;user-select:none;-webkit-user-drag:none}
+  .ip-stage canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:none}
+  .ip-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .ip-tools .btn.active{background:var(--aqua);color:#04222b;border-color:transparent}
+  .ip-size{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted)}
+  .ip-size input{width:140px}
+  .ip-hint{font-size:12px;color:var(--text-dim);margin-left:auto}
+  .ip-actions{display:flex;gap:12px}
+  .ip-actions .btn{flex:1;padding:14px;font-size:14px}
+  @media (max-width:560px){ .ip-hint{display:none} .ip-actions{flex-direction:column} }
+
+  /* logo placement modal (reuses .ip-modal shell) */
+  .lg-box{position:absolute;border:1.5px dashed rgba(0,194,199,.95);cursor:move;touch-action:none;box-sizing:border-box;display:none}
+  .lg-box img{width:100%;height:100%;object-fit:contain;pointer-events:none;display:block}
+  .lg-resize{position:absolute;right:-8px;bottom:-8px;width:17px;height:17px;border-radius:50%;background:var(--aqua);border:2px solid #06101A;cursor:nwse-resize}
+  .lg-pickrow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;min-height:54px}
+  .lg-swatch{width:54px;height:54px;border-radius:10px;overflow:hidden;border:2px solid var(--hairline);cursor:pointer;
+    background:repeating-conic-gradient(#16242f 0 25%,#0f1c26 0 50%) 50%/14px 14px;display:flex;align-items:center;justify-content:center}
+  .lg-swatch.active{border-color:var(--aqua)}
+  .lg-swatch img{max-width:80%;max-height:80%;object-fit:contain}
+  .lg-pick-empty{font-size:13px;color:var(--text-muted)}
+
+  /* materials library toolbar + inpaint material picker */
+  .lib-toolbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+  .lib-field{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-muted)}
+  .lib-field select{background:var(--surface);color:var(--text);border:1px solid var(--hairline);
+    border-radius:9px;padding:7px 10px;font-size:13px;cursor:pointer}
+  .asset-cat{padding:0 11px 9px;font-size:11px;color:var(--text-muted);text-transform:capitalize;opacity:.8;margin-top:-4px}
+  .ip-material{display:flex;flex-direction:column;gap:8px}
+  .ip-material-label{font-size:13px;font-weight:600;color:var(--text)}
+  .ip-mat-pick{display:flex;gap:10px;flex-wrap:wrap;align-items:center;min-height:54px}
+  .ip-mat-swatch{position:relative;width:54px;height:54px;border-radius:10px;overflow:hidden;border:2px solid var(--hairline);
+    cursor:pointer;background:var(--bg-2);display:flex;align-items:center;justify-content:center;flex-direction:column}
+  .ip-mat-swatch img{width:100%;height:100%;object-fit:cover}
+  .ip-mat-swatch.active{border-color:var(--aqua)}
+  .ip-mat-none{width:54px;height:54px;border-radius:10px;border:2px solid var(--hairline);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-muted);background:var(--surface)}
+  .ip-mat-none.active{border-color:var(--aqua);color:var(--text)}
+  .ip-mat-empty{font-size:13px;color:var(--text-muted)}
+  /* inpaint: two-column shell — material rail on the left, image + controls on the right */
+  .ip-body{display:flex;gap:18px;align-items:flex-start}
+  .ip-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:14px}
+  .ip-mat-rail{flex:0 0 auto;align-self:stretch;max-height:64vh;overflow-y:auto;overflow-x:hidden;padding-right:6px}
+  .ip-mat-rail .ip-material-label{display:block;margin-bottom:10px}
+  .ip-mat-rail .ip-mat-cats{margin-bottom:12px}
+  .ip-mat-rail .ip-mat-pick{display:grid;grid-template-columns:repeat(3,54px);gap:8px;min-height:0}
+  .ip-mat-rail::-webkit-scrollbar{width:8px}
+  .ip-mat-rail::-webkit-scrollbar-thumb{background:var(--hairline-strong);border-radius:8px}
+  .ip-guidance{font-size:12px;line-height:1.55;color:var(--text-muted);margin:0;
+    padding:11px 13px;background:var(--surface);border:1px solid var(--hairline);border-radius:var(--r-sm)}
+  /* inpaint: previous-results strip + trash */
+  .ip-history-row{display:flex;align-items:center;gap:10px}
+  .ip-history{display:flex;gap:8px;overflow-x:auto;flex:1;min-width:0;padding:2px 0;scrollbar-width:thin}
+  .ip-history::-webkit-scrollbar{height:7px}
+  .ip-history::-webkit-scrollbar-thumb{background:var(--hairline-strong);border-radius:7px}
+  .ip-history .muted{align-self:center}
+  .ip-hist-thumb{flex:0 0 auto;width:64px;height:64px;border-radius:10px;overflow:hidden;
+    border:2px solid transparent;opacity:.7;transition:.15s var(--ease);position:relative;background:var(--bg-2)}
+  .ip-hist-thumb img{width:100%;height:100%;object-fit:cover}
+  .ip-hist-thumb:hover{opacity:1}
+  .ip-hist-thumb.active{opacity:1;border-color:var(--aqua)}
+  .ip-hist-thumb span{position:absolute;bottom:0;right:0;font-size:9px;font-weight:700;
+    padding:1px 4px;background:rgba(6,16,26,.78);border-top-left-radius:5px;color:var(--text-muted)}
+  #ipTrash{flex:0 0 auto}
+  @media (max-width:760px){
+    .ip-body{flex-direction:column}
+    .ip-mat-rail{flex:0 0 auto;align-self:stretch;max-height:none;overflow:visible;padding-right:0;width:100%}
+    .ip-mat-rail .ip-mat-pick{grid-template-columns:repeat(auto-fill,54px)}
+  }
+  /* material library category sections */
+  .mat-section{margin-bottom:24px}
+  .mat-section-head{font-size:12px;font-weight:700;color:var(--text);text-transform:uppercase;
+    letter-spacing:.05em;margin:0 0 12px;display:flex;align-items:baseline;gap:8px}
+  .mat-section-head .count{font-weight:500;color:var(--text-dim);font-size:11px;letter-spacing:0;text-transform:none}
+  .mat-upload-row{margin-bottom:22px;max-width:170px}
+  /* inpaint picker category chips */
+  .ip-mat-cats{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:2px}
+  .ip-mat-cat{padding:6px 12px;border-radius:999px;font-size:12.5px;cursor:pointer;background:var(--surface);
+    color:var(--text-muted);border:1px solid var(--hairline);transition:.15s var(--ease)}
+  .ip-mat-cat:hover{border-color:var(--hairline-strong);color:var(--text)}
+  .ip-mat-cat.active{background:var(--aqua);color:#04201f;border-color:var(--aqua);font-weight:600}
+  .ip-surface{display:flex;flex-direction:column;gap:8px}
+  .ip-seg{display:inline-flex;gap:4px;background:var(--bg-2);border:1px solid var(--hairline);border-radius:10px;padding:4px;width:fit-content}
+  .ip-seg-btn{background:transparent;border:0;color:var(--text-muted);font-size:13px;padding:7px 14px;border-radius:7px;cursor:pointer}
+  .ip-seg-btn.active{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  /* §8E smart-select chips */
+  .ip-chips{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+  .ip-chips[hidden]{display:none}
+  .ip-chip{padding:7px 13px;border-radius:999px;font-size:13px;cursor:pointer;
+    background:var(--surface);color:var(--text);border:1px solid var(--hairline);transition:.15s var(--ease)}
+  .ip-chip:hover{border-color:var(--hairline-strong)}
+  .ip-chip.active{background:var(--aqua);color:#04201f;border-color:var(--aqua);font-weight:600}
+  .ip-chip.disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+  .ip-chip-note{font-size:12px;color:var(--text-muted)}
+  .refine-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .refine-actions .btn.primary{margin-left:auto}
+  .ref-chip{position:relative;width:40px;height:40px;border-radius:8px;overflow:hidden;border:1px solid var(--hairline);flex:0 0 auto}
+  .ref-chip img{width:100%;height:100%;object-fit:cover;display:block}
+  .ref-x{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:0;background:#000;color:#fff;font-size:12px;line-height:1;cursor:pointer;padding:0}
+
+  /* toast */
+  .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%) translateY(20px);
+    z-index:70;padding:12px 20px;border-radius:14px;font-size:14px;font-weight:600;
+    background:rgba(10,24,38,.92);backdrop-filter:blur(14px);border:1px solid var(--hairline-strong);
+    box-shadow:var(--shadow-hi);opacity:0;pointer-events:none;transition:.3s var(--ease)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast.err{border-color:rgba(224,98,90,.5)}
+
+  /* out-of-credits modal */
+  .credit-modal{position:fixed;inset:0;z-index:75;background:rgba(3,9,15,.93);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    display:none;align-items:center;justify-content:center;padding:24px}
+  .credit-modal.open{display:flex}
+  .credit-box{width:min(420px,92vw);background:var(--bg-2);border:1px solid var(--hairline-strong);
+    border-radius:18px;box-shadow:var(--shadow-hi);padding:28px 26px;text-align:center}
+  .credit-box h3{font-size:19px;font-weight:700;color:var(--text);margin:0 0 8px}
+  .credit-box p{font-size:13px;color:var(--text-muted);line-height:1.55;margin:0 0 22px}
+  .credit-box .btn-row{flex-direction:column;gap:10px}
+  .credit-box .btn{width:100%;padding:13px}
+
+  .hidden{display:none!important}
+
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.001ms!important;transition-duration:.001ms!important}
+  }
+  @media (max-width:520px){
+    .card-grid,.album-grid{grid-template-columns:1fr}
+    .page-head{flex-direction:column;align-items:flex-start;gap:4px}
+  }
+</style>
 </head>
 <body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="dot"></span>Studio<small>&nbsp;/ Albums</small></a>
+    <span class="spacer"></span>
+    <span class="credits">⚡ <b id="creditCount">—</b> credits</span>
+    <a class="ghost-btn" href="/">＋ New design</a>
+    <button class="ghost-btn" id="libraryBtn">Library</button>
+    <button class="ghost-btn" id="trashBtn">🗑 Trash</button>
+    <button class="ghost-btn" id="signOut">Sign out</button>
+  </header>
 
-<div class="ambient-top"></div>
-<div class="ambient-bottom"></div>
-
-<!-- Loading Overlay -->
-<div id="loading-overlay">
-  <div class="spinner-ring"></div>
-  <div class="loading-title">Rendering Your Vision</div>
-  <div class="loading-sub">Transforming your renders into stunning, photo-realistic visuals. Please wait while we process your images.</div>
-  <div class="loading-dots"><span></span><span></span><span></span></div>
-</div>
-
-<!-- Credit Bar -->
-<div id="credit-bar">
-  <span class="credit-label">Credits</span>
-  <span id="credit-count">0</span>
-  <div class="divider-v"></div>
-  <a class="btn-dashboard" href="/dashboard.html">▦ My Albums</a>
-  <button class="btn-buy" onclick="openPurchaseModal()">+ Buy</button>
-  <button class="btn-change-pw" onclick="openChangePasswordModal()">Change Password</button>
-  <button class="btn-logout" onclick="logout()">Sign Out</button>
-</div>
-
-<!-- Purchase Modal -->
-<div id="purchase-modal">
-  <div class="modal-box">
-    <div class="modal-title">Buy Credits</div>
-    <div class="modal-sub">Credits never expire. 1 credit per image action · 8 per video.</div>
-    <div class="pack-option" onclick="purchasePack('starter')">
-      <div><div class="pack-name">Starter</div><div class="pack-credits">40 credits — 40 image actions or 5 videos</div></div>
-      <div class="pack-price">$25</div>
-    </div>
-    <div class="pack-option" onclick="purchasePack('professional')">
-      <div><div class="pack-name">Professional</div><div class="pack-credits">90 credits — 90 image actions or 11 videos</div></div>
-      <div class="pack-price">$50</div>
-    </div>
-    <div class="pack-option" onclick="purchasePack('studio')">
-      <div><div class="pack-name">Studio</div><div class="pack-credits">200 credits — 200 image actions or 25 videos</div></div>
-      <div class="pack-price">$100</div>
-    </div>
-    <button class="btn-close-modal" onclick="closePurchaseModal()">Cancel</button>
-  </div>
-</div>
-
-<!-- Forgot Password Modal -->
-<div id="forgot-modal">
-  <div class="reset-modal-box">
-    <h2>Reset Password</h2>
-    <p>Enter your email address and we'll send you a secure reset link.</p>
-    <input id="reset-email" type="email" class="reset-input" placeholder="Your email address" />
-    <button class="btn-reset-submit btn-reset-blue" onclick="sendResetEmail()">Send Reset Link</button>
-    <p id="reset-msg" style="color:#2ABF7A; font-size:13px; text-align:center; margin-top:14px; display:none; line-height:1.5;">✓ Check your inbox for the reset link.</p>
-    <a class="reset-back-link" onclick="hideForgotModal()">← Back to sign in</a>
-  </div>
-</div>
-
-<!-- New Password Modal -->
-<div id="newpass-modal">
-  <div class="reset-modal-box">
-    <h2>Set New Password</h2>
-    <p>Choose a strong new password for your StudioFinish account.</p>
-    <input id="new-password" type="password" class="reset-input" placeholder="New password (min 6 characters)" />
-    <button class="btn-reset-submit btn-reset-green" onclick="updatePassword()">Update Password</button>
-    <p id="newpass-msg" style="font-size:13px; text-align:center; margin-top:14px; display:none; line-height:1.5;"></p>
-  </div>
-</div>
-
-<!-- Change Password Modal -->
-<div id="changepass-modal">
-  <div class="reset-modal-box">
-    <h2>Change Password</h2>
-    <p>Enter your current password to verify your identity, then choose a new one.</p>
-    <input id="current-password" type="password" class="reset-input" placeholder="Current password" />
-    <input id="change-new-password" type="password" class="reset-input" placeholder="New password (min 6 characters)" />
-    <input id="change-confirm-password" type="password" class="reset-input" placeholder="Confirm new password" />
-    <button class="btn-reset-submit btn-reset-green" onclick="changePassword()">Update Password</button>
-    <p id="changepass-msg" style="font-size:13px; text-align:center; margin-top:14px; display:none; line-height:1.5;"></p>
-    <a class="reset-back-link" onclick="closeChangePasswordModal()">← Cancel</a>
-  </div>
-</div>
-
-<!-- ── LANDING PAGE ── -->
-<div class="landing-wrapper">
-
-  <img src="assets/hero2.png" alt="StudioFinish — Cinematic Landscape Visuals" class="hero-banner">
-  <div class="aqua-rule"></div>
-
-  <div class="hero-section">
-    <h1 class="hero-headline">
-      Transform Your Renders Into<br>
-      <em>Stunning Client Presentations</em>
-    </h1>
-    <p class="hero-body">
-      StudioFinish transforms standard design renders into photo-realistic, client-ready visuals that close deals. Customize your background to match any location on earth, dial in precision lighting and premium surface materials — then watch your static design come alive as a cinematic 5-second video your clients will never forget.
-    </p>
-  </div>
-
-  <!-- ── BEFORE / AFTER SLIDER ── -->
-  <div class="before-after-section">
-    <div class="section-label">See The Difference</div>
-    <p style="text-align:center; font-size:14px; color:var(--text-muted); line-height:1.7; max-width:540px; margin: 0 auto 24px;">
-      Drag the slider to reveal the transformation. Every image below started as a standard design render — what you see on the right is what your clients will receive.
-    </p>
-
-    <div class="slider-wrapper" id="sliderWrapper">
-      <!-- After image (full width base) -->
-      <img class="img-after" id="sliderAfter" src="assets/After1.png" alt="After" draggable="false">
-
-      <!-- Before image (clipped reveal) -->
-      <div class="img-before-wrap" id="sliderBeforeWrap">
-        <img id="sliderBefore" src="assets/Before1.png" alt="Before" draggable="false">
-      </div>
-
-      <!-- Labels -->
-      <span class="slider-label slider-label-before">Before</span>
-      <span class="slider-label slider-label-after">After</span>
-
-      <!-- Divider + handle -->
-      <div class="slider-divider" id="sliderDivider"></div>
-      <div class="slider-handle" id="sliderHandle">
-        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path d="M8 5l-5 7 5 7M16 5l5 7-5 7" stroke="#06101A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-        </svg>
-      </div>
-    </div>
-
-    <!-- Navigation -->
-    <div class="slider-nav">
-      <button class="slider-nav-btn" id="sliderPrev" title="Previous">&#8592;</button>
-      <div class="slider-dots" id="sliderDots"></div>
-      <button class="slider-nav-btn" id="sliderNext" title="Next">&#8594;</button>
-    </div>
-    <div class="slider-caption" id="sliderCaption"></div>
-  </div>
-
-  <!-- ── VIDEO SHOWCASE ── -->
-  <div class="video-section">
-    <div class="section-label">Bring It To Life</div>
-    <p class="video-tagline">
-      Still images close deals — <em>videos seal them.</em> Every StudioFinish render can be transformed into a fluid, cinematic 5-second animation your clients can share, post, and present with pride. Watch what your designs look like in motion.
-    </p>
-
-    <div class="video-container" id="videoContainer" onclick="playVideo()">
-      <video
-        id="showcaseVideo"
-        src="assets/Landscape_Animation (1).mp4"
-        playsinline
-        preload="metadata"
-        poster="assets/After1.png"
-      ></video>
-
-      <div class="video-play-overlay" id="videoOverlay">
-        <div class="video-play-btn">
-          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path d="M5 3l14 9-14 9V3z"/>
-          </svg>
+  <main class="wrap">
+    <!-- Albums view -->
+    <section id="albumsView">
+      <div class="lib-banner" id="libBanner" hidden>
+        <div class="lib-banner-txt"><b>Build your brand Library.</b> Upload your <b>logos</b> and <b>material swatches</b> once — open the <b>Library</b> chip up top to reuse them across every album.</div>
+        <div class="lib-banner-actions">
+          <button class="btn primary" id="libBannerOpen">Open Library</button>
+          <button class="lib-banner-x" id="libBannerX" aria-label="Dismiss tip">✕</button>
         </div>
-        <div class="video-play-label">Watch the Animation</div>
+      </div>
+      <div class="page-head">
+        <div>
+          <h1>Your Albums</h1>
+          <p>Every enhancement batch, saved with its full edit history.</p>
+        </div>
+        <label class="lib-field album-sort" id="albumSortWrap" hidden>Sort
+          <select id="albumSort">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="az">Name A–Z</option>
+            <option value="za">Name Z–A</option>
+          </select>
+        </label>
+      </div>
+      <div id="albumGrid" class="album-grid">
+        <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+      </div>
+    </section>
+
+    <!-- Album detail view -->
+    <section id="albumView" class="hidden">
+      <a class="back" id="backBtn">‹ All albums</a>
+      <div class="page-head">
+        <div>
+          <h1 id="albumTitle">Album</h1>
+          <p id="albumMeta"></p>
+        </div>
+        <button class="ghost-btn" id="renameBtn">Rename</button>
+      </div>
+      <div id="cardGrid" class="card-grid"></div>
+    </section>
+
+    <!-- Trash view -->
+    <section id="trashView" class="hidden">
+      <a class="back" id="trashBack">‹ All albums</a>
+      <div class="page-head">
+        <div>
+          <h1>Trash</h1>
+          <p>Deleted designs are kept for 30 days, then permanently removed.</p>
+        </div>
+      </div>
+      <div id="trashGrid" class="album-grid"></div>
+    </section>
+
+    <!-- Library view (reusable brand assets) -->
+    <section id="libraryView" class="hidden">
+      <a class="back" id="libBack">‹ All albums</a>
+      <div class="page-head">
+        <div>
+          <h1>Library</h1>
+          <p>Reusable brand assets — applied across your albums.</p>
+        </div>
+      </div>
+      <div class="lib-tabs">
+        <button class="lib-tab active" data-lib="logos">Logos</button>
+        <button class="lib-tab" data-lib="materials">Materials</button>
+      </div>
+      <div id="libLogos" class="lib-panel">
+        <div id="logoGrid" class="asset-grid"></div>
+      </div>
+      <div id="libMaterials" class="lib-panel hidden">
+        <div class="lib-toolbar">
+          <label class="lib-field">New uploads are
+            <select id="matCategory">
+              <option value="paver">Paver</option>
+              <option value="tile">Tile</option>
+              <option value="decking">Decking</option>
+              <option value="stone">Stone</option>
+              <option value="gravel">Gravel</option>
+              <option value="other">Other</option>
+            </select>
+          </label>
+          <span class="muted">Use edge-to-edge texture swatches for the cleanest swaps.</span>
+        </div>
+        <div id="materialGrid"></div>
+      </div>
+    </section>
+  </main>
+
+  <div class="lightbox" id="lightbox"><img id="lightboxImg" alt=""></div>
+
+  <div class="cmp-modal" id="cmpModal">
+    <div class="cmp-modal-inner">
+      <div class="cmp-modal-head">
+        <span>Compare &amp; choose — drag the divider</span>
+        <button class="cmp-close" id="cmpClose" aria-label="Close">✕</button>
+      </div>
+      <div class="cmp-stage-wrap"><div class="compare" id="cmpStage"></div></div>
+      <div class="cmp-modal-actions">
+        <button class="btn wide" id="cmpUseEnhanced">Use Enhanced</button>
+        <button class="btn wide" id="cmpUseHealed">Use Healed</button>
       </div>
     </div>
+  </div>
+  <div class="toast" id="toast"></div>
 
-    <div style="text-align:center;">
-      <div class="video-badge">5-Second Cinematic Video · Delivered by Email · 8 Credits</div>
+  <div class="credit-modal" id="creditModal">
+    <div class="credit-box">
+      <h3>You're out of credits</h3>
+      <p>This action needs credits you don't have right now. Top up to keep refining, inpainting, upscaling, and animating.</p>
+      <div class="btn-row">
+        <button class="btn primary" onclick="goBuyCredits()">Buy credits</button>
+        <button class="btn" onclick="closeCreditModal()">Maybe later</button>
+      </div>
     </div>
   </div>
 
-  <!-- Stats -->
-  <div class="stats-row">
-    <div class="stat-item">
-      <span class="stat-num">∞</span>
-      <span class="stat-label">Custom backgrounds</span>
-    </div>
-    <div class="stat-item">
-      <span class="stat-num">5s</span>
-      <span class="stat-label">Cinematic video</span>
-    </div>
-    <div class="stat-item">
-      <span class="stat-num">1</span>
-      <span class="stat-label">Credit per image action</span>
-    </div>
-    <div class="stat-item">
-      <span class="stat-num">8</span>
-      <span class="stat-label">Credits per video</span>
+  <div class="ip-modal" id="ipModal">
+    <div class="ip-modal-inner">
+      <div class="ip-head">
+        <span>Inpaint — paint a specific area to add an object or swap a material in that exact spot</span>
+        <button class="ip-close" id="ipClose" aria-label="Close">✕</button>
+      </div>
+      <div class="ip-body">
+        <aside class="ip-mat-rail">
+          <div class="ip-material">
+            <span class="ip-material-label">Swap material <span class="muted">(optional)</span></span>
+            <div id="ipMatCats" class="ip-mat-cats"></div>
+            <div id="ipMatPick" class="ip-mat-pick"></div>
+          </div>
+        </aside>
+        <div class="ip-main">
+          <div class="ip-stage" id="ipStage">
+            <img id="ipImg" alt="">
+            <canvas id="ipView"></canvas>
+          </div>
+          <div class="ip-history-row">
+            <div class="ip-history" id="ipHistory"></div>
+            <button class="btn icon" id="ipTrash" title="Remove the current version from history">🗑</button>
+          </div>
+          <div class="ip-tools">
+            <button class="btn active" id="ipBrush" data-mode="brush">🖌 Brush</button>
+            <button class="btn" id="ipEraser" data-mode="eraser">🩹 Eraser</button>
+            <button class="btn" id="ipSmart" data-mode="smart">🪄 Smart select</button>
+            <label class="ip-size">Size <input type="range" id="ipSize" min="6" max="140" value="40"></label>
+            <button class="btn" id="ipClear">Clear mask</button>
+            <span class="ip-hint">Only the painted area changes — everything else is preserved exactly.</span>
+          </div>
+          <div class="ip-chips" id="ipChips" hidden></div>
+          <div class="ip-surface">
+            <span class="ip-material-label">Surface</span>
+            <div class="ip-seg" id="ipSurface">
+              <button type="button" class="ip-seg-btn active" data-surface="auto">Auto</button>
+              <button type="button" class="ip-seg-btn" data-surface="floor">Floor / ground</button>
+              <button type="button" class="ip-seg-btn" data-surface="wall">Wall / vertical</button>
+            </div>
+          </div>
+          <p class="ip-guidance">A little bleed-over into the painted area is fine — results can be unpredictable. If a texture comes out too large, or an object lands in the wrong spot or plane, you can correct its size or position afterward with <b>Global refine</b> using prompt commands. Swapping waterline tile or decking is often better done with <b>Global refine</b> using a reference swatch and a detailed prompt.</p>
+          <textarea id="ipPrompt" class="refine-in" rows="2" placeholder="Describe the fix for the painted area — e.g. replace with smooth travertine pavers, matching the surrounding shadows"></textarea>
+          <div class="ip-actions">
+            <button class="btn" id="ipCancel">Cancel</button>
+            <button class="btn primary" id="ipGo">Generate inpaint</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- How It Works -->
-  <div class="how-section">
-    <div class="section-label">How It Works</div>
-    <div class="steps-grid">
-      <div class="step-card">
-        <div class="step-num">1</div>
-        <div class="step-title">Upload Your Renders</div>
-        <div class="step-body">Upload one or multiple design renders. Wide-angle yard shots work best.</div>
+  <div class="ip-modal" id="refModal">
+    <div class="ip-modal-inner">
+      <div class="ip-head">
+        <span>Pick a reference image — your prompt decides what happens with it</span>
+        <button class="ip-close" id="refClose" aria-label="Close">✕</button>
       </div>
-      <div class="step-card">
-        <div class="step-num">2</div>
-        <div class="step-title">Set Your Scene</div>
-        <div class="step-body">Choose your backplane environment, lighting, and paver style.</div>
-      </div>
-      <div class="step-card">
-        <div class="step-num">3</div>
-        <div class="step-title">Receive Your Gallery</div>
-        <div class="step-body">Download photo-realistic visuals and optional 5-second client-ready videos.</div>
+      <p class="muted" style="margin:0 0 14px">Attach a library image, then write the instruction, e.g. "change all the stucco to this material" or "put this in the pool". No masking needed.</p>
+      <div id="refGrid" class="asset-grid"></div>
+      <div class="ip-actions">
+        <button class="btn" id="refCancel">Cancel</button>
       </div>
     </div>
   </div>
 
-  <!-- Pricing Section -->
-  <div class="pricing-section">
-    <div class="section-label">Credit Packages</div>
-    <div class="pricing-grid">
-      <div class="pricing-card">
-        <div class="pricing-name">Starter</div>
-        <div class="pricing-price">$25</div>
-        <div class="pricing-per">one-time purchase</div>
-        <div class="pricing-divider"></div>
-        <div class="pricing-credits">40 Credits</div>
-        <div class="pricing-breakdown">40 image actions<br>or 5 videos</div>
+  <div class="ip-modal" id="lgModal">
+    <div class="ip-modal-inner">
+      <div class="ip-head">
+        <span>Logo — drag to position, drag the corner to resize</span>
+        <button class="ip-close" id="lgClose" aria-label="Close">✕</button>
       </div>
-      <div class="pricing-card featured">
-        <div class="pricing-badge">Popular</div>
-        <div class="pricing-name">Professional</div>
-        <div class="pricing-price">$50</div>
-        <div class="pricing-per">one-time purchase</div>
-        <div class="pricing-divider"></div>
-        <div class="pricing-credits">90 Credits</div>
-        <div class="pricing-breakdown">90 image actions<br>or 11 videos</div>
+      <div class="ip-stage" id="lgStage">
+        <img id="lgImg" alt="">
+        <div class="lg-box" id="lgBox"><img id="lgBoxImg" alt=""><span class="lg-resize" id="lgResize"></span></div>
       </div>
-      <div class="pricing-card">
-        <div class="pricing-name">Studio</div>
-        <div class="pricing-price">$100</div>
-        <div class="pricing-per">one-time purchase</div>
-        <div class="pricing-divider"></div>
-        <div class="pricing-credits">200 Credits</div>
-        <div class="pricing-breakdown">200 image actions<br>or 25 videos</div>
+      <div class="lg-pickrow" id="lgPick"></div>
+      <div class="ip-tools">
+        <label class="ip-size">Opacity <input type="range" id="lgOpacity" min="10" max="100" value="100"></label>
+        <span class="ip-hint">Transparent PNG works best. Apply to the whole album or just this image.</span>
+      </div>
+      <div class="ip-actions">
+        <button class="btn" id="lgRemove">Remove logo</button>
+        <button class="btn" id="lgApplyOne">Apply to this image</button>
+        <button class="btn primary" id="lgApplyAll">Set as album default</button>
       </div>
     </div>
-    <p style="text-align:center; font-size:12px; color:var(--text-dim); margin-top:14px; line-height:1.6;">
-      Credits never expire &nbsp;·&nbsp; 1 credit per image action &nbsp;·&nbsp; 8 credits per 5-second video
-    </p>
   </div>
-
-  <!-- Auth Panel -->
-  <div id="auth-panel">
-    <div class="auth-header">
-      <h2>Welcome Back</h2>
-      <p>Sign in to access your StudioFinish workspace</p>
-    </div>
-    <div class="auth-tabs">
-      <button class="auth-tab active" onclick="switchTab('login', event)">Sign In</button>
-      <button class="auth-tab" onclick="switchTab('signup', event)">Create Account</button>
-    </div>
-    <div id="auth-error" class="auth-error"></div>
-    <input type="email" id="auth-email" class="auth-input" placeholder="Email address" />
-    <input type="password" id="auth-password" class="auth-input" placeholder="Password" />
-    <div class="terms-row" id="terms-row">
-      <label>
-        <input type="checkbox" id="terms-checkbox">
-        <span>I agree to the <a href="/terms.html" target="_blank">Terms of Service</a>. I understand that generated images are AI renderings for presentation purposes only.</span>
-      </label>
-    </div>
-    <button id="auth-btn" type="button" onclick="handleAuth()">Sign In</button>
-    <a class="forgot-link" onclick="showForgotModal()">Forgot your password?</a>
-  </div>
-
-  <!-- Enhancement Form -->
-  <form id="enhancement-form">
-    <div class="form-header">
-      <div class="form-eyebrow">StudioFinish</div>
-      <div class="form-title">Enhancement Settings</div>
-    </div>
-    <div class="instructions-box">
-      <strong>Before You Upload</strong>
-      <ul>
-        <li>Wide-angle yard shots produce the best results. Avoid overhead angles.</li>
-        <li><strong>Backplane:</strong> Describe your background environment (e.g., Camelback Mountain, Houston Residential, Scottsdale Desert).</li>
-      </ul>
-    </div>
-    <div class="form-group">
-      <label>Album</label>
-      <div style="display:flex;gap:8px;margin-bottom:10px">
-        <button type="button" id="albumTabNew" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--aqua);background:var(--aqua);color:#06101A;font-weight:600;cursor:pointer;font-family:inherit">New album</button>
-        <button type="button" id="albumTabExisting" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--text-dim);background:transparent;color:var(--text-muted);font-weight:600;cursor:pointer;font-family:inherit">Add to existing</button>
-      </div>
-      <input type="text" id="albumName" name="albumName" placeholder="Album name (e.g. Henderson Residence)">
-      <select id="albumId" name="albumId" disabled style="display:none">
-        <option value="">Select an album…</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label for="back_plane">Back Plane Environment</label>
-      <input type="text" id="back_plane" name="back_plane" placeholder="e.g. Sonoran Desert, Scottsdale Residential">
-    </div>
-    <div class="form-group">
-      <label for="time_of_day">Lighting & Time of Day</label>
-      <select id="time_of_day" name="time_of_day">
-  <option value="Clear azure blue sky, cloudless, bright midday sun, crisp directional sunlight.">Clear Blue Sky — Midday Sun</option>
-  <option value="Warm golden hour sky, low sun angle, glowing amber and soft pink gradient, scattered wispy clouds catching sunlight, soft atmospheric lighting.">Golden Hour — Warm Sunset</option>
-  <option value="Dark moody sky, heavy volumetric storm clouds, deep gray and blue tones, diffused overcast lighting, dramatic atmospheric tension.">Stormy Overcast — Dramatic Mood</option>
-  <option value="Crisp night sky, glowing full moon, vivid Milky Way galaxy band, thousands of sharp brilliant stars, cool blue ambient moonlight, astrophotography style.">Night Sky — Moonlit Stars</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label for="paver_style">Paver Material</label>
-      <select id="paver_style" name="paver_style">
-        <option value="Concrete">Concrete</option>
-        <option value="Travertine">Travertine Paver</option>
-        <option value="Limestone">Limestone Paver</option>
-        <option value="Marble">Marble Paver</option>
-        <option value="Porcelain">Porcelain Paver</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label for="paver_pattern">Paver Pattern</label>
-      <select id="paver_pattern" name="paver_pattern">
-        <option value="Acrylic Lace">Acrylic Lace</option>
-        <option value="Grid">Grid</option>
-        <option value="Offset">Offset</option>
-        <option value="Versailles">Versailles</option>
-        <option value="Herringbone">Herringbone</option>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label for="images">Upload Renders</label>
-      <input type="file" id="images" name="images" multiple accept="image/*" />
-    </div>
-    <button type="submit">Enhance Images →</button>
-    <div class="tips-box">
-      <strong>Pricing</strong>
-      <ul>
-        <li>1 credit per image action — enhance, refine, inpaint, upscale (~1 min)</li>
-        <li>Each 5-second video animation = 8 credits</li>
-        <li>Results delivered to your gallery instantly</li>
-      </ul>
-    </div>
-  </form>
-
-</div>
-
-<footer class="landing-footer">
-  <div class="footer-brand">StudioFinish</div>
-  <div>Photo-realistic rendering for pool &amp; landscape professionals</div>
-</footer>
 
 <script>
-// ── Supabase Client ────────────────────────────────────────────────────────
-const SUPABASE_URL = 'https://oqsginzzrhpvuptpbaxe.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9xc2dpbnp6cmhwdnVwdHBiYXhlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxMzU3NzEsImV4cCI6MjA5MjcxMTc3MX0.N0zL-4Ee34ymMzWE9O3r3_4Pbm0Js4YX3Lyhz6UWNgc';
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+"use strict";
+const TOKEN = localStorage.getItem('authToken');
+if (!TOKEN) location.replace('/');
 
-let authToken = localStorage.getItem('authToken') || null;
-let currentTab = 'login';
+const $ = (s,r=document)=>r.querySelector(s);
+const el=(tag,cls)=>{const e=document.createElement(tag);if(cls)e.className=cls;return e;};
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-const SUBMIT_URL = '/api/enhance';
-const STATUS_URL = '/api/status';
+let toastTimer;
+function toast(msg,isErr){
+  const t=$('#toast'); t.textContent=msg; t.classList.toggle('err',!!isErr); t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3200);
+}
 
-// ── Init ───────────────────────────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', async () => {
-  if (authToken) {
-    const { data: { user } } = await supabaseClient.auth.getUser(authToken);
-    if (user) { showApp(); loadCredits(); }
-    else { localStorage.removeItem('authToken'); authToken = null; }
+function openCreditModal(){ const m=$('#creditModal'); if(m) m.classList.add('open'); }
+function closeCreditModal(){ const m=$('#creditModal'); if(m) m.classList.remove('open'); }
+function goBuyCredits(){ location.href='/?buy=1'; }
+
+async function api(path,opts){
+  opts=opts||{};
+  const headers=Object.assign({'Authorization':'Bearer '+TOKEN},opts.headers||{});
+  if(opts.body && !headers['Content-Type']) headers['Content-Type']='application/json';
+  const res=await fetch(path,{method:opts.method||'GET',headers,body:opts.body?JSON.stringify(opts.body):undefined});
+  if(res.status===401){location.replace('/');throw new Error('unauthorized');}
+  let data=null; try{data=await res.json();}catch(e){}
+  if(res.status===402){ openCreditModal(); const err=new Error((data&&data.error)||'Insufficient credits'); err.code='INSUFFICIENT_CREDITS'; throw err; }
+  if(!res.ok) throw new Error((data&&data.error)||('Request failed ('+res.status+')'));
+  return data;
+}
+
+/* ── State ── */
+let ALBUMS=[];
+let current={jobId:null,projectId:null,name:'',images:[]};
+const imgState={}; // projectImageId -> image object
+
+/* ── Credits ── */
+async function loadCredits(){
+  try{const d=await api('/api/credits'); $('#creditCount').textContent=(d.balance!=null?d.balance:(d.credits!=null?d.credits:'—'));}
+  catch(e){}
+}
+
+/* ── Albums ── */
+let albumSort = localStorage.getItem('albumSort') || 'newest';
+function sortAlbums(list){
+  const a=list.slice();
+  const byName=(x,y)=>String(x.name||'').localeCompare(String(y.name||''),undefined,{sensitivity:'base',numeric:true});
+  const byDate=(x,y)=>(new Date(x.createdAt||0))-(new Date(y.createdAt||0));
+  switch(albumSort){
+    case 'oldest': a.sort(byDate); break;
+    case 'az':     a.sort(byName); break;
+    case 'za':     a.sort((x,y)=>byName(y,x)); break;
+    case 'newest':
+    default:       a.sort((x,y)=>byDate(y,x)); break;
   }
-
-  const params = new URLSearchParams(window.location.search);
-
-  if (params.get('reset') === 'true') {
-    const { data } = await supabaseClient.auth.getSession();
-    if (data?.session) {
-      authToken = data.session.access_token;
-      localStorage.setItem('authToken', authToken);
-      document.getElementById('newpass-modal').style.display = 'flex';
-      window.history.replaceState({}, '', '/');
+  return a;
+}
+function renderAlbums(){
+  const grid=$('#albumGrid'); grid.innerHTML='';
+  sortAlbums(ALBUMS).forEach(a=>grid.appendChild(albumTile(a)));
+}
+async function loadAlbums(){
+  const grid=$('#albumGrid'); const sortWrap=$('#albumSortWrap');
+  try{
+    const d=await api('/api/albums');
+    ALBUMS=d.albums||[];
+    if(!ALBUMS.length){
+      if(sortWrap) sortWrap.hidden=true;
+      grid.innerHTML='';
+      const e=el('div','empty');
+      e.innerHTML='<h2>No albums yet</h2><p>Enhance your first design and it’ll appear here.</p><p style="margin-top:14px"><a href="/">Start a new design ›</a></p>';
+      grid.appendChild(e); return;
     }
-  }
+    if(sortWrap) sortWrap.hidden=false;
+    renderAlbums();
+  }catch(e){ if(sortWrap) sortWrap.hidden=true; grid.innerHTML=''; const x=el('div','empty'); x.innerHTML='<h2>Couldn’t load albums</h2><p>'+esc(e.message)+'</p>'; grid.appendChild(x); }
+}
 
-  if (params.get('purchase') === 'success') {
+function fmtDate(s){ if(!s)return''; try{return new Date(s).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});}catch(e){return'';} }
+
+function albumTile(a){
+  const t=el('div','tile');
+  const done=(a.status==='completed');
+  t.innerHTML=
+    '<div class="status-dot '+(done?'done':'proc')+'"><i></i>'+(done?'Ready':'Processing')+'</div>'+
+    (a.coverUrl
+      ? '<div class="tile-cover"><img loading="lazy" src="'+esc(a.coverUrl)+'" alt=""></div>'
+      : '<div class="tile-cover empty">No preview</div>')+
+    '<div class="tile-scrim"></div>'+
+    '<div class="tile-body"><div class="meta">'+
+      '<h3>'+esc(a.name)+'</h3>'+
+      '<div class="sub">'+a.imageCount+' image'+(a.imageCount===1?'':'s')+' · '+fmtDate(a.createdAt)+'</div>'+
+    '</div>'+
+    '<button class="tile-rename" title="Rename" aria-label="Rename album">✎</button></div>';
+  t.querySelector('.tile-rename').addEventListener('click',ev=>{ev.stopPropagation();renameAlbum(a);});
+  t.addEventListener('click',()=>openAlbum(a));
+  return t;
+}
+
+async function renameAlbum(a){
+  const name=prompt('Rename album',a.name);
+  if(name==null||!name.trim()||name.trim()===a.name) return;
+  try{
+    await api('/api/album/'+a.albumId,{method:'PATCH',body:{name:name.trim()}});
+    a.name=name.trim();
+    if(current.albumId===a.albumId){ current.name=a.name; $('#albumTitle').textContent=a.name; }
+    loadAlbums(); toast('Album renamed');
+  }catch(e){ toast(e.message,true); }
+}
+
+/* ── Album detail ── */
+async function openAlbum(a){
+  if(albumPollTimer){ clearTimeout(albumPollTimer); albumPollTimer=null; }
+  current={albumId:a.albumId,name:a.name,images:[]};
+  $('#albumsView').classList.add('hidden');
+  $('#trashView').classList.add('hidden');
+  $('#libraryView').classList.add('hidden');
+  $('#albumView').classList.remove('hidden');
+  $('#albumTitle').textContent=a.name||'Album';
+  $('#albumMeta').textContent='Loading…';
+  $('#cardGrid').innerHTML='<div class="skeleton" style="aspect-ratio:3/2"></div><div class="skeleton" style="aspect-ratio:3/2"></div>';
+  window.scrollTo({top:0,behavior:'smooth'});
+  try{
+    const d=await api('/api/album/'+encodeURIComponent(a.albumId));
+    current.images=d.images||[];
+    current.logoDefault=d.album?d.album.logoDefault:null;
+    if(d.album&&d.album.name){ current.name=d.album.name; $('#albumTitle').textContent=d.album.name; }
+    $('#albumMeta').textContent=(d.album?d.album.totalItems+' images':current.images.length+' images');
+    const grid=$('#cardGrid'); grid.innerHTML='';
+    let anyProcessing=false;
+    current.images.forEach(img=>{
+      imgState[img.projectImageId]=img;
+      const c=buildCard(img); grid.appendChild(c); maybeStartHeal(c,img);
+      if(!(img.status==='completed' && (img.current_url||img.enhanced_url))) anyProcessing=true;
+    });
+    if(!current.images.length){ grid.innerHTML='<div class="empty"><h2>No images</h2></div>'; }
+    if(anyProcessing) pollAlbumProgress();
+  }catch(e){ $('#cardGrid').innerHTML='<div class="empty"><h2>Couldn’t load album</h2><p>'+esc(e.message)+'</p></div>'; }
+}
+$('#backBtn').addEventListener('click',()=>{
+  if(albumPollTimer){ clearTimeout(albumPollTimer); albumPollTimer=null; }
+  $('#albumView').classList.add('hidden'); $('#albumsView').classList.remove('hidden');
+  window.scrollTo({top:0,behavior:'smooth'}); loadAlbums();
+});
+$('#renameBtn').addEventListener('click',()=>{ const a=ALBUMS.find(x=>x.albumId===current.albumId); if(a) renameAlbum(a); });
+
+/* ── Image card ── */
+function activeIdx(img){
+  if(!img.versions||!img.versions.length) return -1;
+  return img.versions.findIndex(v=>v.id===img.active_version_id);
+}
+function buildCard(img){
+  const card=el('div','card'+(( img.status==='completed' && (img.current_url||img.enhanced_url) )?'':' is-processing'));
+  card.dataset.id=img.projectImageId;
+  const cur=img.current_url||img.enhanced_url||'';
+  const idx=parseInt(img.image_index,10); const num=isNaN(idx)?'':(idx+1);
+  const hasHealed=!!img.healed_url, hasEnh=!!img.enhanced_url;
+  const processing=!(img.status==='completed' && (img.current_url||img.enhanced_url));
+  const rb=badgeFor(img);
+  const badge=(rb==='4K')?'<span class="badge k4">4K</span>':'<span class="badge">'+esc(rb)+'</span>';
+  const stageExtra=processing
+    ? '<div class="proc-overlay" data-proc><span class="spin"></span><span>Enhancing…</span></div>'
+    : badge;
+
+  card.innerHTML=
+    '<div class="stage" data-stage>'+
+      '<img data-main src="'+esc(cur)+'" alt="Design '+num+'">'+
+      stageExtra+
+      '<button class="expand" title="View full" aria-label="View full size">⤢</button>'+
+    '</div>'+
+    '<div class="card-body">'+
+      '<div class="card-title-row"><h4>Design '+num+'</h4>'+
+        '<button class="btn icon" data-delete title="Move to Trash">🗑</button></div>'+
+      '<div class="divider"></div>'+
+      '<div class="tool-group">'+
+        '<p class="tool-hint"><b>Global refine</b> — for big, scene-wide changes: decking, background, time of day, pebble interior color, a property-line wall or hedges. A reference swatch is optional.'+
+          '<span class="eg">e.g. “Change the decking to gray tumbled limestone pavers. Make it a night scene with a starry sky and full moon, and add a soft glow to the pool water. Add a full-length 15-ft leafy ficus hedge wall behind the foreground shrubs but in front of the background mountains.”</span></p>'+
+        '<div class="tool">'+
+          '<textarea class="refine-in" rows="2" placeholder="Describe a change — e.g. warmer lighting, change all the stucco to this material, put this in the pool"></textarea>'+
+          '<div class="refine-actions">'+
+            '<div class="ref-chip" data-ref-chip hidden><img data-ref-thumb alt=""><button class="ref-x" data-ref-clear title="Remove reference">×</button></div>'+
+            '<button class="btn" data-ref-add title="Attach a library swatch to reference in your prompt">🖼 Reference</button>'+
+            '<button class="btn primary" data-refine>Refine</button>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+      '<div class="history" data-history></div>'+
+      '<div class="divider"></div>'+
+      '<div class="btn-row pair">'+
+        '<button class="btn wide" data-upscale>⬆ Upscale to 4K</button>'+
+        '<button class="btn wide" data-download>⬇ Download</button>'+
+      '</div>'+
+      '<div class="tool-group">'+
+        '<p class="tool-hint"><b>Inpaint</b> — paint over one specific spot to add an object or swap a material in just that location.</p>'+
+        '<button class="btn wide" data-inpaint>✎ Inpaint a specific area</button>'+
+      '</div>'+
+      '<div class="tool-group">'+
+        '<p class="tool-hint"><b>Logo</b> — overlay one of your saved brand logos or watermarks and position it on the image.</p>'+
+        '<button class="btn wide" data-logo>🏷 Add logo / watermark</button>'+
+      '</div>'+
+      '<div class="btn-row share-row">'+
+        '<button class="btn" data-pin title="Share to Pinterest">📌 Pinterest</button>'+
+        '<button class="btn" data-fb title="Share to Facebook">f Facebook</button>'+
+      '</div>'+
+      '<div class="anim">'+
+        '<input type="email" placeholder="Email for 5s animation…">'+
+        '<button class="btn" data-animate>🎬 Animate</button>'+
+      '</div>'+
+    '</div>';
+
+  // wire
+  const stage=card.querySelector('[data-stage]');
+  card.querySelector('.expand').addEventListener('click',()=>openLightbox(card.querySelector('[data-main]').src));
+  card.querySelector('[data-delete]').addEventListener('click',()=>deleteImage(card,img));
+  card.querySelector('[data-refine]').addEventListener('click',e=>refine(card,img,e.currentTarget));
+  card.querySelector('[data-ref-add]').addEventListener('click',()=>openRefModal(card));
+  card.querySelector('[data-ref-clear]').addEventListener('click',()=>clearRef(card));
+  card.querySelector('[data-upscale]').addEventListener('click',e=>upscale(card,img,e.currentTarget));
+  card.querySelector('[data-inpaint]').addEventListener('click',()=>openInpaintModal(card,img));
+  card.querySelector('[data-logo]').addEventListener('click',()=>openLogoModal(card,img));
+  card.querySelector('[data-download]').addEventListener('click',()=>download(card.querySelector('[data-main]').src,'design-'+num+'.jpg'));
+  card.querySelector('[data-pin]').addEventListener('click',()=>window.open('https://pinterest.com/pin/create/button/?media='+encodeURIComponent(card.querySelector('[data-main]').src),'_blank'));
+  card.querySelector('[data-fb]').addEventListener('click',()=>window.open('https://www.facebook.com/sharer/sharer.php?u='+encodeURIComponent(card.querySelector('[data-main]').src),'_blank'));
+  card.querySelector('[data-animate]').addEventListener('click',e=>animate(card,img,e.currentTarget));
+
+  renderHistory(card,img);
+  updateCompareState(card);
+  return card;
+}
+
+/* ── Compare availability: enabled only when an enhanced/healed pair exists AND
+   the user has not yet committed to a version. The append-only `versions` chain
+   is the signal — any pick, refine, or upscale appends a version, which locks
+   the comparison (you've chosen; further work happens on the version history). */
+function updateCompareState(card){
+  const img=imgState[card.dataset.id]; if(!img) return;
+  const btn=card.querySelector('[data-compare]'); if(!btn) return;
+  const hasPair=!!img.enhanced_url && !!img.healed_url;
+  const chosen=!!(img.versions && img.versions.length);
+  btn.disabled=(!hasPair || chosen);
+  btn.title=!hasPair ? 'No alternate to compare'
+          : chosen ? 'Choice locked in — your edit history is now driving this image'
+          : 'Compare enhanced vs healed';
+}
+
+/* ── Compare (pop-out modal) ── */
+let cmpCurrent = { card:null, img:null };
+function openCompareModal(card,img){
+  // Always work off the freshest copy (handlers close over the original object).
+  const latest = imgState[img.projectImageId] || img;
+  if(!latest.enhanced_url || !latest.healed_url) return;
+  if(latest.versions && latest.versions.length) return; // choice locked — nothing to compare
+  cmpCurrent = { card:card, img:latest };
+  const stage = $('#cmpStage');
+  stage.style.setProperty('--pct','50%');
+  // clip-path reveals the TOP image on the LEFT, BASE shows on the RIGHT.
+  // So: top = Enhanced (left, matches left tag), base = Healed (right, matches right tag).
+  stage.innerHTML =
+    '<img class="base" src="'+esc(latest.healed_url)+'" alt="Healed result">'+
+    '<img class="top" src="'+esc(latest.enhanced_url)+'" alt="Enhanced result">'+
+    '<div class="cmp-divider"></div><div class="cmp-handle">⇋</div>'+
+    '<span class="cmp-tag l">Enhanced</span><span class="cmp-tag r">Healed</span>'+
+    '<input class="cmp-range" type="range" min="0" max="100" value="50" aria-label="Drag to compare enhanced and healed">';
+  const range = stage.querySelector('.cmp-range');
+  range.addEventListener('input',()=>stage.style.setProperty('--pct',range.value+'%'));
+  const idx = activeIdx(latest);
+  const activeSource = (idx>=0 && latest.versions[idx]) ? latest.versions[idx].source : null;
+  $('#cmpUseEnhanced').classList.toggle('active', activeSource==='enhanced');
+  $('#cmpUseHealed').classList.toggle('active', activeSource==='healed');
+  $('#cmpModal').classList.add('open');
+}
+function closeCompareModal(){ $('#cmpModal').classList.remove('open'); $('#cmpStage').innerHTML=''; cmpCurrent={card:null,img:null}; }
+$('#cmpClose').addEventListener('click', closeCompareModal);
+$('#cmpModal').addEventListener('click', e=>{ if(e.target.id==='cmpModal') closeCompareModal(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && $('#cmpModal').classList.contains('open')) closeCompareModal(); });
+$('#cmpUseEnhanced').addEventListener('click', async ()=>{ if(cmpCurrent.card){ await pick(cmpCurrent.card,cmpCurrent.img,'enhanced'); closeCompareModal(); } });
+$('#cmpUseHealed').addEventListener('click', async ()=>{ if(cmpCurrent.card){ await pick(cmpCurrent.card,cmpCurrent.img,'healed'); closeCompareModal(); } });
+
+// retained as a safe no-op (in-card pick row was replaced by the modal)
+function highlightPick(card,img){
+  const idx=activeIdx(img);
+  const activeSource=(idx>=0&&img.versions[idx])?img.versions[idx].source:null;
+  card.querySelectorAll('[data-pick] button').forEach(b=>b.classList.toggle('active',b.dataset.choice===activeSource));
+}
+
+async function pick(card,img,choice){
+  try{
+    const d=await api('/api/select-image',{method:'POST',body:{projectImageId:img.projectImageId,choice}});
+    img.current_url=d.current_url; img.active_version_id=d.active_version_id;
+    await refreshImage(img.projectImageId);
+    toast('Saved the '+choice+' version');
+  }catch(e){ toast(e.message,true); }
+}
+
+/* ── History strip + undo/redo ── */
+function renderHistory(card,img){
+  const h=card.querySelector('[data-history]'); h.innerHTML='';
+  const idx=activeIdx(img);
+  const nav=el('div','hist-nav');
+  const undo=el('button','btn icon'); undo.textContent='↩'; undo.title='Undo';
+  const redo=el('button','btn icon'); redo.textContent='↪'; redo.title='Redo';
+  undo.disabled=!(idx>0); redo.disabled=!(img.versions&&idx>=0&&idx<img.versions.length-1);
+  undo.addEventListener('click',()=>moveVersion(card,img,'undo'));
+  redo.addEventListener('click',()=>moveVersion(card,img,'redo'));
+  const del=el('button','btn icon'); del.textContent='🗑'; del.title='Remove this version from history';
+  del.disabled=!(img.versions&&img.versions.length&&idx>=0);
+  del.addEventListener('click',()=>deleteVersion(card,img));
+  nav.appendChild(undo); nav.appendChild(redo); nav.appendChild(del); h.appendChild(nav);
+
+  const strip=el('div','hist-strip');
+  // mouse wheel: translate vertical wheel into horizontal scroll (native only does this for trackpad deltaX)
+  strip.addEventListener('wheel',(e)=>{
+    if(strip.scrollWidth<=strip.clientWidth) return;        // nothing to scroll
+    const dy=e.deltaY; if(!dy) return;                       // horizontal wheels scroll natively
+    const atStart=strip.scrollLeft<=0, atEnd=strip.scrollLeft+strip.clientWidth>=strip.scrollWidth-1;
+    if((dy<0&&atStart)||(dy>0&&atEnd)) return;               // at an edge → let the page scroll
+    strip.scrollLeft+=dy; e.preventDefault();
+  },{passive:false});
+  if(img.versions&&img.versions.length){
+    img.versions.forEach(v=>{
+      const th=el('button','hist-thumb'+(v.id===img.active_version_id?' active':''));
+      th.title=(v.source||'')+(v.prompt?' — '+v.prompt:'');
+      th.innerHTML='<img src="'+esc(v.url)+'" alt=""><span>v'+v.seq+'</span>';
+      th.addEventListener('click',()=>setVersion(card,img,v.id));
+      strip.appendChild(th);
+    });
+  }else{
+    const note=el('span','muted'); note.textContent='No saved versions yet — compare and pick, or refine to start the history.';
+    strip.appendChild(note);
+  }
+  h.appendChild(strip);
+  // keep the active thumbnail in view (the strip scrolls horizontally within the card)
+  const act=strip.querySelector('.hist-thumb.active');
+  if(act){ requestAnimationFrame(()=>{ strip.scrollLeft = act.offsetLeft - (strip.clientWidth/2) + (act.clientWidth/2); }); }
+}
+async function deleteVersion(card,img){
+  const latest=imgState[img.projectImageId]||img;
+  const vid=latest.active_version_id;
+  if(!vid){ toast('Pick a version to remove first',true); return; }
+  if(!confirm('Remove this version from the history? This cannot be undone.')) return;
+  try{
+    await api('/api/version/delete',{method:'POST',body:{projectImageId:img.projectImageId,versionId:vid}});
+    await refreshImage(img.projectImageId);
+    toast('Version removed');
+  }catch(e){ toast(e.message,true); }
+}
+/* Resolution badge reflects the ACTIVE version, not the image row. Only an upscale
+   produces 4K; enhanced / healed / refine / inpaint are all 1K. This fixes the badge
+   reading 4K while browsing back through pre-upscale 1K versions in the history. */
+function badgeFor(img){
+  if(img && img.versions && img.versions.length && img.active_version_id){
+    const v=img.versions.find(x=>x.id===img.active_version_id);
+    if(v) return v.source==='upscale' ? '4K' : '1K';
+  }
+  return '1K'; // base enhanced state, or no versions yet
+}
+function setBadge(card,img){
+  const stage=card&&card.querySelector('[data-stage]'); if(!stage) return;
+  const old=stage.querySelector('.badge'); if(old) old.remove();
+  const rb=badgeFor(img);
+  const nb=el('span','badge'+(rb==='4K'?' k4':'')); nb.textContent=rb; stage.appendChild(nb);
+}
+function applyCursor(card,img,d){
+  img.current_url=d.current_url; img.active_version_id=d.active_version_id;
+  if(imgState[img.projectImageId]){ imgState[img.projectImageId].current_url=d.current_url; imgState[img.projectImageId].active_version_id=d.active_version_id; }
+  card.querySelector('[data-main]').src=d.current_url;
+  setBadge(card,img); renderHistory(card,img); highlightPick(card,img); updateCompareState(card);
+}
+async function moveVersion(card,img,dir){
+  try{ const d=await api('/api/version/'+dir,{method:'POST',body:{projectImageId:img.projectImageId}}); applyCursor(card,img,d);}catch(e){toast(e.message,true);}
+}
+async function setVersion(card,img,versionId){
+  try{ const d=await api('/api/version/set',{method:'POST',body:{projectImageId:img.projectImageId,versionId}}); applyCursor(card,img,d);}catch(e){toast(e.message,true);}
+}
+
+/* ── Refresh one image from the server (after async tools) ── */
+async function refreshImage(projectImageId){
+  try{
+    const d=await api('/api/album/'+encodeURIComponent(current.albumId));
+    const fresh=(d.images||[]).find(i=>i.projectImageId===projectImageId);
+    if(!fresh) return;
+    imgState[projectImageId]=fresh;
+    const card=$('#cardGrid').querySelector('.card[data-id="'+projectImageId+'"]');
+    if(!card) return;
+    card.querySelector('[data-main]').src=fresh.current_url||fresh.enhanced_url||'';
+    setBadge(card,fresh);
+    renderHistory(card,fresh); highlightPick(card,fresh); updateCompareState(card);
+  }catch(e){}
+}
+
+/* ── Refine (async + poll) ── */
+let refTargetCard=null;
+function openRefModal(card){
+  refTargetCard=card;
+  const grid=$('#refGrid');
+  grid.innerHTML='<div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div>';
+  $('#refModal').classList.add('open');
+  api('/api/materials').then(function(d){
+    const materials=d.materials||[]; grid.innerHTML='';
+    if(!materials.length){ grid.innerHTML='<div class="empty"><h2>No library images yet</h2><p class="muted">Add some in Library → Materials.</p></div>'; return; }
+    materials.forEach(function(m){
+      const a=el('div','asset');
+      a.innerHTML='<div class="asset-img"><img src="'+esc(m.imageUrl)+'" alt="" style="max-width:100%;max-height:100%;object-fit:cover"></div><div class="asset-name">'+esc(m.name||'Image')+'</div>';
+      a.style.cursor='pointer';
+      a.addEventListener('click',function(){ selectRef(m); });
+      grid.appendChild(a);
+    });
+  }).catch(function(){ grid.innerHTML='<div class="empty"><h2>Could not load library</h2></div>'; });
+}
+function closeRefModal(){ $('#refModal').classList.remove('open'); refTargetCard=null; }
+function selectRef(m){
+  const card=refTargetCard; if(!card) return;
+  card._refMaterialId=m.id;
+  const chip=card.querySelector('[data-ref-chip]');
+  card.querySelector('[data-ref-thumb]').src=m.imageUrl;
+  chip.hidden=false;
+  closeRefModal();
+  toast('Reference attached — describe what to do with it');
+}
+function clearRef(card){
+  card._refMaterialId=null;
+  const chip=card.querySelector('[data-ref-chip]'); if(chip) chip.hidden=true;
+}
+async function refine(card,img,btn){
+  const ta=card.querySelector('.refine-in'); const prompt=ta.value.trim();
+  if(!prompt){ toast('Enter an instruction first',true); return; }
+  const mainImg=card.querySelector('[data-main]');
+  const src=mainImg.src;
+  const materialId=card._refMaterialId||null;
+  btn.disabled=true; btn.textContent='Starting…';
+  try{
+    await api('/api/refine',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt,materialId,source_w:mainImg.naturalWidth||'',source_h:mainImg.naturalHeight||''}});
     loadCredits();
-    alert('Credits added! Your balance has been updated.');
-    window.history.replaceState({}, '', '/');
-  }
-
-  if (params.get('purchase') === 'cancelled') {
-    window.history.replaceState({}, '', '/');
-  }
-
-  if (params.get('buy') === '1') {
-    if (authToken) openPurchaseModal();
-    window.history.replaceState({}, '', '/');
-  }
-
-  setInterval(async () => {
-    if (!authToken) return;
-    const { data } = await supabaseClient.auth.refreshSession();
-    if (data?.session?.access_token) {
-      authToken = data.session.access_token;
-      localStorage.setItem('authToken', authToken);
-    }
-  }, 50 * 60 * 1000);
-
-  initSlider();
-});
-
-// ── Before/After Slider ────────────────────────────────────────────────────
-/*
-  ADD YOUR IMAGE PAIRS HERE.
-  - before: path to the original design render (in your assets/ folder)
-  - after:  path to the StudioFinish enhanced version
-  - caption: short description shown below the slider
-  Images should be the same dimensions and landscape orientation.
-*/
-const sliderPairs = [
-  {
-    before: 'assets/Before1.png',
-    after:  'assets/After1.png',
-    caption: 'Design Render → StudioFinish Photo-Realistic Result'
-  },
-  {
-    before: 'assets/Before2.png',
-    after:  'assets/After2.jpg',
-    caption: 'Design Render → StudioFinish Photo-Realistic Result'
-  },
-  {
-    before: 'assets/Before3.jpg',
-    after:  'assets/After3.jpg',
-    caption: 'Design Render → StudioFinish Photo-Realistic Result'
-  }
-];
-
-let currentSlide = 0;
-let isDragging = false;
-let sliderPercent = 50;
-
-function initSlider() {
-  const wrapper   = document.getElementById('sliderWrapper');
-  const dotsEl    = document.getElementById('sliderDots');
-
-  // Build dots
-  sliderPairs.forEach((_, i) => {
-    const dot = document.createElement('div');
-    dot.className = 'slider-dot' + (i === 0 ? ' active' : '');
-    dot.addEventListener('click', () => goToSlide(i));
-    dotsEl.appendChild(dot);
-  });
-
-  // Set initial slide
-  goToSlide(0);
-
-  // Nav buttons
-  document.getElementById('sliderPrev').addEventListener('click', () => {
-    goToSlide((currentSlide - 1 + sliderPairs.length) % sliderPairs.length);
-  });
-  document.getElementById('sliderNext').addEventListener('click', () => {
-    goToSlide((currentSlide + 1) % sliderPairs.length);
-  });
-
-  // Drag events — mouse
-  wrapper.addEventListener('mousedown', startDrag);
-  window.addEventListener('mousemove', onDrag);
-  window.addEventListener('mouseup', stopDrag);
-
-  // Drag events — touch
-  wrapper.addEventListener('touchstart', startDrag, { passive: true });
-  window.addEventListener('touchmove', onDrag, { passive: false });
-  window.addEventListener('touchend', stopDrag);
+    btn.textContent='Refining…';
+    pollStatus('/api/refine-status',img.jobId,img.image_index,'refined_url',async()=>{
+      ta.value=''; clearRef(card); btn.disabled=false; btn.textContent='Refine';
+      await refreshImage(img.projectImageId); toast('Refine saved as a new version');
+    },()=>{ btn.disabled=false; btn.textContent='Refine'; });
+  }catch(e){ btn.disabled=false; btn.textContent='Refine'; if(e.code!=='INSUFFICIENT_CREDITS') toast(e.message,true); }
 }
 
-function goToSlide(index) {
-  currentSlide = index;
-  const pair = sliderPairs[index];
-
-  // Swap images with a quick fade
-  const after  = document.getElementById('sliderAfter');
-  const before = document.getElementById('sliderBefore');
-
-  after.style.opacity  = '0';
-  before.style.opacity = '0';
-
-  setTimeout(() => {
-    after.src  = pair.after;
-    before.src = pair.before;
-    after.style.transition  = 'opacity 0.35s';
-    before.style.transition = 'opacity 0.35s';
-    after.style.opacity  = '1';
-    before.style.opacity = '1';
-  }, 150);
-
-  // Reset divider to centre
-  sliderPercent = 50;
-  applySliderPercent();
-
-  // Update dots
-  document.querySelectorAll('.slider-dot').forEach((d, i) => {
-    d.classList.toggle('active', i === index);
-  });
-
-  // Caption
-  document.getElementById('sliderCaption').textContent = pair.caption;
-
-  // Sync before-image full width
-  syncBeforeWidth();
-}
-
-function syncBeforeWidth() {
-  const wrapper = document.getElementById('sliderWrapper');
-  const before  = document.getElementById('sliderBefore');
-  before.style.width = wrapper.offsetWidth + 'px';
-}
-
-function applySliderPercent() {
-  const wrap    = document.getElementById('sliderBeforeWrap');
-  const divider = document.getElementById('sliderDivider');
-  const handle  = document.getElementById('sliderHandle');
-
-  wrap.style.width      = sliderPercent + '%';
-  divider.style.left    = sliderPercent + '%';
-  handle.style.left     = sliderPercent + '%';
-}
-
-function getEventX(e) {
-  return e.touches ? e.touches[0].clientX : e.clientX;
-}
-
-function startDrag(e) {
-  isDragging = true;
-  syncBeforeWidth();
-}
-
-function onDrag(e) {
-  if (!isDragging) return;
-  if (e.cancelable) e.preventDefault();
-
-  const wrapper = document.getElementById('sliderWrapper');
-  const rect    = wrapper.getBoundingClientRect();
-  const x       = getEventX(e) - rect.left;
-  sliderPercent = Math.min(98, Math.max(2, (x / rect.width) * 100));
-  applySliderPercent();
-}
-
-function stopDrag() {
-  isDragging = false;
-}
-
-// Re-sync on resize
-window.addEventListener('resize', () => {
-  syncBeforeWidth();
-  applySliderPercent();
-});
-
-// ── Video Showcase ─────────────────────────────────────────────────────────
-function playVideo() {
-  const video   = document.getElementById('showcaseVideo');
-  const overlay = document.getElementById('videoOverlay');
-
-  if (video.paused) {
-    video.play();
-    overlay.classList.add('hidden');
-  } else {
-    video.pause();
-    overlay.classList.remove('hidden');
-  }
-}
-
-// Show overlay again when video ends
-document.addEventListener('DOMContentLoaded', () => {
-  const video = document.getElementById('showcaseVideo');
-  if (video) {
-    video.addEventListener('ended', () => {
-      document.getElementById('videoOverlay').classList.remove('hidden');
-      video.currentTime = 0;
-    });
-  }
-});
-
-// ── Hero scroll nudge ────────────────────────────────────────────────────────
-// Gently auto-scrolls ~30% of the hero banner once per session so visitors notice
-// there's more below the fold. Cancels on any user input, skips if a modal is open,
-// if the page isn't at the top, or if the visitor prefers reduced motion.
-(function(){
-  if (sessionStorage.getItem('heroNudged') === '1') return;
-  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-  let cancelled = false;
-  function cleanup(){
-    window.removeEventListener('wheel', cancel);
-    window.removeEventListener('touchmove', cancel);
-    window.removeEventListener('keydown', cancel);
-  }
-  function cancel(){ cancelled = true; cleanup(); }
-  window.addEventListener('wheel', cancel, { passive: true });
-  window.addEventListener('touchmove', cancel, { passive: true });
-  window.addEventListener('keydown', cancel);
-
-  function aModalIsOpen(){
-    return ['purchase-modal','forgot-modal','newpass-modal','changepass-modal'].some(function(id){
-      const m = document.getElementById(id);
-      return m && getComputedStyle(m).display !== 'none';
-    });
-  }
-  function nudge(){
-    if (cancelled || window.scrollY > 4 || aModalIsOpen()) { cleanup(); return; }
-    const hero = document.querySelector('.hero-banner');
-    const heroH = hero ? hero.getBoundingClientRect().height : 0;
-    const target = Math.round((heroH || window.innerHeight) * 0.30);
-    sessionStorage.setItem('heroNudged', '1');
-    window.scrollTo({ top: target, behavior: 'smooth' });
-    cleanup();
-  }
-  window.addEventListener('load', function(){ setTimeout(nudge, 1100); });
-})();
-
-// ── Auth ───────────────────────────────────────────────────────────────────
-function switchTab(tab, event) {
-  currentTab = tab;
-  document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
-  event.target.classList.add('active');
-  document.getElementById('auth-btn').textContent = tab === 'login' ? 'Sign In' : 'Create Account';
-  document.getElementById('auth-error').style.display = 'none';
-  document.querySelector('.auth-header h2').textContent = tab === 'login' ? 'Welcome Back' : 'Create Account';
-  document.querySelector('.auth-header p').textContent = tab === 'login' ? 'Sign in to access your StudioFinish workspace' : 'Join StudioFinish and start rendering today';
-  document.getElementById('terms-row').style.display = tab === 'signup' ? 'block' : 'none';
-  document.querySelector('.forgot-link').style.display = tab === 'login' ? 'block' : 'none';
-}
-
-async function handleAuth() {
-  const email = document.getElementById('auth-email').value.trim();
-  const password = document.getElementById('auth-password').value;
-  const errorEl = document.getElementById('auth-error');
-  errorEl.style.display = 'none';
-
-  if (!email || !password) {
-    errorEl.textContent = 'Please enter your email and password.';
-    errorEl.style.display = 'block';
-    return;
-  }
-
-  try {
-    let result;
-    if (currentTab === 'login') {
-      result = await supabaseClient.auth.signInWithPassword({ email, password });
-    } else {
-      const agreed = document.getElementById('terms-checkbox').checked;
-      if (!agreed) {
-        errorEl.textContent = 'Please agree to the Terms of Service to create an account.';
-        errorEl.style.display = 'block';
-        return;
-      }
-      result = await supabaseClient.auth.signUp({ email, password });
-    }
-
-    if (result.error) {
-      errorEl.textContent = result.error.message;
-      errorEl.style.display = 'block';
-      return;
-    }
-
-    authToken = result.data.session?.access_token;
-    if (!authToken) {
-      errorEl.style.color = '#2ABF7A';
-      errorEl.style.background = 'rgba(42,191,122,0.1)';
-      errorEl.style.borderColor = 'rgba(42,191,122,0.25)';
-      errorEl.textContent = '✓ Account created! Check your email to confirm, then sign in.';
-      errorEl.style.display = 'block';
-      return;
-    }
-
-    localStorage.setItem('authToken', authToken);
-    showApp();
+/* ── Upscale (async + poll) ── */
+async function upscale(card,img,btn){
+  const src=card.querySelector('[data-main]').src;
+  btn.disabled=true; btn.textContent='Starting…';
+  try{
+    await api('/api/upscale',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),outputQuality:80}});
     loadCredits();
-  } catch (err) {
-    errorEl.textContent = 'Connection error. Please try again.';
-    errorEl.style.display = 'block';
-  }
+    btn.textContent='Upscaling…';
+    pollStatus('/api/upscale-status',img.jobId,img.image_index,'upscaled_url',async()=>{
+      btn.disabled=false; btn.textContent='⬆ Upscale to 4K';
+      await refreshImage(img.projectImageId); toast('Upscaled to 4K');
+    },()=>{ btn.disabled=false; btn.textContent='⬆ Upscale to 4K'; });
+  }catch(e){ btn.disabled=false; btn.textContent='⬆ Upscale to 4K'; if(e.code!=='INSUFFICIENT_CREDITS') toast(e.message,true); }
 }
 
-async function logout() {
-  await supabaseClient.auth.signOut();
-  authToken = null;
-  localStorage.removeItem('authToken');
-  document.getElementById('auth-panel').style.display = 'block';
-  document.getElementById('enhancement-form').style.display = 'none';
-  document.getElementById('credit-bar').style.display = 'none';
-}
-
-function showApp() {
-  document.getElementById('auth-panel').style.display = 'none';
-  document.getElementById('enhancement-form').style.display = 'block';
-  document.getElementById('credit-bar').style.display = 'flex';
-}
-
-// ── Forgot Password ────────────────────────────────────────────────────────
-function showForgotModal() {
-  document.getElementById('forgot-modal').style.display = 'flex';
-  document.getElementById('reset-msg').style.display = 'none';
-  document.getElementById('reset-email').value = '';
-}
-
-function hideForgotModal() {
-  document.getElementById('forgot-modal').style.display = 'none';
-}
-
-async function sendResetEmail() {
-  const email = document.getElementById('reset-email').value.trim();
-  if (!email || !email.includes('@')) { alert('Please enter a valid email address.'); return; }
-  try {
-    const res = await fetch('/auth/reset-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email })
-    });
-    if (res.ok) {
-      document.getElementById('reset-msg').style.display = 'block';
-    } else {
-      const data = await res.json();
-      alert(data.error || 'Could not send reset email. Please try again.');
-    }
-  } catch (err) { alert('Connection error. Please try again.'); }
-}
-
-async function updatePassword() {
-  const password = document.getElementById('new-password').value;
-  const msgEl = document.getElementById('newpass-msg');
-  if (!password || password.length < 6) {
-    msgEl.style.color = '#ff8080';
-    msgEl.textContent = 'Password must be at least 6 characters.';
-    msgEl.style.display = 'block';
-    return;
-  }
-  try {
-    const res = await fetch('/auth/update-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
-      body: JSON.stringify({ password })
-    });
-    if (res.ok) {
-      msgEl.style.color = '#2ABF7A';
-      msgEl.textContent = '✓ Password updated. Please sign in.';
-      msgEl.style.display = 'block';
-      setTimeout(() => {
-        document.getElementById('newpass-modal').style.display = 'none';
-        authToken = null;
-        localStorage.removeItem('authToken');
-        document.getElementById('auth-panel').style.display = 'block';
-        document.getElementById('enhancement-form').style.display = 'none';
-        document.getElementById('credit-bar').style.display = 'none';
-      }, 2000);
-    } else {
-      const data = await res.json();
-      msgEl.style.color = '#ff8080';
-      msgEl.textContent = data.error || 'Update failed. Please try again.';
-      msgEl.style.display = 'block';
-    }
-  } catch (err) {
-    msgEl.style.color = '#ff8080';
-    msgEl.textContent = 'Connection error. Please try again.';
-    msgEl.style.display = 'block';
-  }
-}
-
-// ── Change Password ────────────────────────────────────────────────────────
-function openChangePasswordModal() {
-  document.getElementById('changepass-modal').style.display = 'flex';
-  document.getElementById('current-password').value = '';
-  document.getElementById('change-new-password').value = '';
-  document.getElementById('change-confirm-password').value = '';
-  const msgEl = document.getElementById('changepass-msg');
-  msgEl.style.display = 'none';
-  msgEl.textContent = '';
-}
-
-function closeChangePasswordModal() {
-  document.getElementById('changepass-modal').style.display = 'none';
-}
-
-async function changePassword() {
-  const currentPassword = document.getElementById('current-password').value;
-  const newPassword = document.getElementById('change-new-password').value;
-  const confirmPassword = document.getElementById('change-confirm-password').value;
-  const msgEl = document.getElementById('changepass-msg');
-  msgEl.style.display = 'none';
-
-  if (!currentPassword) {
-    msgEl.style.color = '#ff8080';
-    msgEl.textContent = 'Please enter your current password.';
-    msgEl.style.display = 'block';
-    return;
-  }
-  if (!newPassword || newPassword.length < 6) {
-    msgEl.style.color = '#ff8080';
-    msgEl.textContent = 'New password must be at least 6 characters.';
-    msgEl.style.display = 'block';
-    return;
-  }
-  if (newPassword !== confirmPassword) {
-    msgEl.style.color = '#ff8080';
-    msgEl.textContent = 'New passwords do not match.';
-    msgEl.style.display = 'block';
-    return;
-  }
-  if (currentPassword === newPassword) {
-    msgEl.style.color = '#ff8080';
-    msgEl.textContent = 'New password must be different from your current password.';
-    msgEl.style.display = 'block';
-    return;
-  }
-
-  try {
-    const { data: userData } = await supabaseClient.auth.getUser(authToken);
-    if (!userData?.user?.email) {
-      msgEl.style.color = '#ff8080';
-      msgEl.textContent = 'Session expired. Please sign in again.';
-      msgEl.style.display = 'block';
-      return;
-    }
-
-    const { error: verifyError } = await supabaseClient.auth.signInWithPassword({
-      email: userData.user.email,
-      password: currentPassword
-    });
-
-    if (verifyError) {
-      msgEl.style.color = '#ff8080';
-      msgEl.textContent = 'Current password is incorrect.';
-      msgEl.style.display = 'block';
-      return;
-    }
-
-    const res = await fetch('/auth/update-password', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
-      body: JSON.stringify({ password: newPassword })
-    });
-
-    if (res.ok) {
-      msgEl.style.color = '#2ABF7A';
-      msgEl.textContent = '✓ Password updated successfully.';
-      msgEl.style.display = 'block';
-      setTimeout(() => closeChangePasswordModal(), 1800);
-    } else {
-      const data = await res.json();
-      msgEl.style.color = '#ff8080';
-      msgEl.textContent = data.error || 'Update failed. Please try again.';
-      msgEl.style.display = 'block';
-    }
-  } catch (err) {
-    msgEl.style.color = '#ff8080';
-    msgEl.textContent = 'Connection error. Please try again.';
-    msgEl.style.display = 'block';
-  }
-}
-
-// ── Credits ────────────────────────────────────────────────────────────────
-async function loadCredits() {
-  try {
-    const res = await fetch('/api/credits', { headers: { 'Authorization': `Bearer ${authToken}` } });
-    const data = await res.json();
-    document.getElementById('credit-count').textContent = data.balance ?? 0;
-  } catch (err) { console.error('Could not load credits:', err); }
-}
-
-// ── Purchase ───────────────────────────────────────────────────────────────
-function openPurchaseModal() { document.getElementById('purchase-modal').style.display = 'flex'; }
-function closePurchaseModal() { document.getElementById('purchase-modal').style.display = 'none'; }
-
-async function purchasePack(pack) {
-  try {
-    const res = await fetch('/api/purchase', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-      body: JSON.stringify({ pack })
-    });
-    const data = await res.json();
-    if (data.url) { window.location.href = data.url; }
-    else { alert('Could not start checkout. Please try again.'); }
-  } catch (err) { alert('Connection error. Please try again.'); }
-}
-
-// ── Enhancement Form ───────────────────────────────────────────────────────
-const form = document.getElementById('enhancement-form');
-const overlay = document.getElementById('loading-overlay');
-
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  overlay.style.display = 'flex';
-  const formData = new FormData(form);
-  try {
-    const response = await fetch(SUBMIT_URL, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${authToken}` },
-      body: formData
-    });
-    if (response.status === 402) {
-      overlay.style.display = 'none';
-      alert('Not enough credits. Please purchase more to continue.');
-      openPurchaseModal();
-      return;
-    }
-    if (response.ok) {
-      const data = await response.json();
-      loadCredits();
-      // Dashboard cutover: go straight to the new album view (reads Supabase directly,
-      // shows enhance progress, the heal "alternate" pill, and Compare). The legacy
-      // Sheets gallery + /api/status polling are retired.
-      const album = data.albumId;
-      window.location.href = album
-        ? ('/dashboard.html?album=' + encodeURIComponent(album))
-        : '/dashboard.html';
-      return;
-    } else {
-      alert('Submission failed. Please try again.');
-      overlay.style.display = 'none';
-    }
-  } catch (error) {
-    console.error('Submission Error:', error);
-    alert('Connection failed.');
-    overlay.style.display = 'none';
-  }
-});
-
-// ── Album picker (new album vs add-to-existing) ──
-(function(){
-  const tabNew=document.getElementById('albumTabNew');
-  const tabExisting=document.getElementById('albumTabExisting');
-  const nameInput=document.getElementById('albumName');
-  const idSelect=document.getElementById('albumId');
-  if(!tabNew||!tabExisting||!nameInput||!idSelect) return;
-  let loaded=false;
-  function setMode(isNew){
-    nameInput.style.display=isNew?'':'none'; nameInput.disabled=!isNew;
-    idSelect.style.display=isNew?'none':''; idSelect.disabled=isNew; idSelect.required=!isNew;
-    tabNew.style.background=isNew?'var(--aqua)':'transparent';
-    tabNew.style.color=isNew?'#06101A':'var(--text-muted)';
-    tabNew.style.borderColor=isNew?'var(--aqua)':'var(--text-dim)';
-    tabExisting.style.background=!isNew?'var(--aqua)':'transparent';
-    tabExisting.style.color=!isNew?'#06101A':'var(--text-muted)';
-    tabExisting.style.borderColor=!isNew?'var(--aqua)':'var(--text-dim)';
-  }
-  async function loadExisting(){
-    if(loaded||!authToken) return; loaded=true;
+function pollStatus(base,jobId,imageIndex,urlKey,onDone,onFail){
+  let n=0; const max=90;
+  const tick=async()=>{
+    n++;
     try{
-      const r=await fetch('/api/albums',{headers:{'Authorization':'Bearer '+authToken}});
-      if(!r.ok) return;
-      const d=await r.json(); const list=d.albums||[];
-      list.forEach(function(a){
-        const o=document.createElement('option');
-        o.value=a.albumId; o.textContent=a.name+' ('+a.imageCount+')';
-        idSelect.appendChild(o);
-      });
-      if(!list.length){ const o=idSelect.querySelector('option'); if(o) o.textContent='No albums yet — start a new one'; }
+      const d=await api(base+'?jobId='+encodeURIComponent(jobId)+'&imageIndex='+encodeURIComponent(String(imageIndex)));
+      if(d.status==='completed'&&d[urlKey]){ onDone(); return; }
+      if(d.status==='failed'||d.status==='error'){ toast('Operation failed: '+(d.error_message||'unknown'),true); onFail&&onFail(); return; }
     }catch(e){}
+    if(n>=max){ toast('Still working — check back shortly',true); onFail&&onFail(); return; }
+    setTimeout(tick,2000);
+  };
+  setTimeout(tick,2000);
+}
+
+/* ── Async auto-heal watch: show "Generating alternate…" while the Flash heal runs
+   in the background, then refresh so the Compare slider lights up. Quiet by design:
+   404 (no heal job — e.g. legacy images) or a fallback (no genuine alternate) just
+   hide the pill and leave Compare disabled. */
+async function startHealWatch(card,img){
+  const latest=imgState[img.projectImageId]||img;
+  if(latest.healed_url) return;                 // a real alternate already exists
+  const hint=card.querySelector('[data-heal-hint]');
+  let n=0; const max=120;
+  const tick=async()=>{
+    n++;
+    let d;
+    try{
+      d=await api('/api/heal-status?jobId='+encodeURIComponent(img.jobId)+'&imageIndex='+encodeURIComponent(String(img.image_index)));
+    }catch(e){ if(hint)hint.classList.add('hidden'); return; } // 404 / no job → stop quietly
+    if(d.status==='completed'){
+      if(hint)hint.classList.add('hidden');
+      if(d.healed_url && !d.heal_fallback){ await refreshImage(img.projectImageId); } // Compare enables via updateCompareState
+      return;
+    }
+    if(d.status==='failed'){ if(hint)hint.classList.add('hidden'); return; }
+    if(hint)hint.classList.remove('hidden');     // still processing
+    if(n>=max){ if(hint)hint.classList.add('hidden'); return; }
+    setTimeout(tick,2500);
+  };
+  tick();
+}
+
+/* heal watches are deduped so repeated polls/loads never stack timers */
+const healWatching=new Set();
+let albumPollTimer=null;
+
+function maybeStartHeal(card,img){
+  return; // Heal retired (1.0.8): no alternate is generated; nothing to watch.
+}
+
+/* Transition a still-enhancing card to its finished state (no fetch — caller supplies fresh). */
+function applyReady(card,fresh){
+  card.classList.remove('is-processing');
+  const ov=card.querySelector('[data-proc]'); if(ov) ov.remove();
+  card.querySelector('[data-main]').src=fresh.current_url||fresh.enhanced_url||'';
+  setBadge(card,fresh);
+  renderHistory(card,fresh); highlightPick(card,fresh); updateCompareState(card);
+}
+
+/* Poll the album while any image is still enhancing — we land here straight after a
+   batch. Updates cards in place; as each enhance completes it hands off to the heal watch. */
+function pollAlbumProgress(){
+  if(albumPollTimer){ clearTimeout(albumPollTimer); albumPollTimer=null; }
+  let n=0; const max=150;
+  const tick=async()=>{
+    n++;
+    let d;
+    try{ d=await api('/api/album/'+encodeURIComponent(current.albumId)); }
+    catch(e){ albumPollTimer=setTimeout(tick,5000); return; }
+    const imgs=d.images||[]; let anyProcessing=false;
+    imgs.forEach(fresh=>{
+      imgState[fresh.projectImageId]=fresh;
+      const card=$('#cardGrid').querySelector('.card[data-id="'+fresh.projectImageId+'"]');
+      if(!card) return;
+      const ready=fresh.status==='completed' && (fresh.current_url||fresh.enhanced_url);
+      if(ready){
+        if(card.classList.contains('is-processing')) applyReady(card,fresh);
+        maybeStartHeal(card,fresh);
+      }else{ anyProcessing=true; }
+    });
+    if(anyProcessing && n<max){ albumPollTimer=setTimeout(tick,5000); } else { albumPollTimer=null; }
+  };
+  tick();
+}
+
+/* ── Animate ── */
+async function animate(card,img,btn){
+  const input=card.querySelector('.anim input'); const email=input.value.trim();
+  if(!email||email.indexOf('@')<0){ toast('Enter a valid email',true); return; }
+  const src=card.querySelector('[data-main]').src;
+  btn.disabled=true; btn.textContent='Sending…';
+  try{
+    await api('/api/animate',{method:'POST',body:{email,image:src,name:'design-'+((parseInt(img.image_index,10)||0)+1)+'.jpg'}});
+    btn.textContent='Sent'; toast('Animation is rendering — we’ll email it in 1–2 min');
+    loadCredits();
+  }catch(e){ btn.disabled=false; btn.textContent='🎬 Animate'; if(e.code!=='INSUFFICIENT_CREDITS') toast(e.message,true); }
+}
+
+/* ── Download (blob, to force save of cross-origin S3) ── */
+async function download(url,name){
+  try{
+    const r=await fetch(url); const b=await r.blob(); const u=URL.createObjectURL(b);
+    const a=el('a'); a.href=u; a.download=name||'image.jpg'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(u),1500);
+    toast('Saved to your Downloads');
+  }catch(e){ window.open(url,'_blank'); toast('Opened in a new tab — right-click to save',true); }
+}
+
+/* ── Inpaint (roomy modal mask editor → Path A + server-side composite) ──
+   The S3 image is a plain <img> backdrop; the canvas on top only ever holds the
+   user's own mask strokes, so toDataURL() is never tainted (no S3 CORS needed).
+   We keep a visible aqua overlay + a hidden white-on-black mask in lockstep, and
+   export the mask as a PNG to /api/inpaint. */
+/* §8E smart-select lexicon: the surfaces that get chips. `concept` MUST match the
+   SAM3 `class` string returned by /api/segment verbatim (the chip stays disabled on
+   any mismatch); `label` is what the user reads; `orientation` auto-sets the v8
+   Surface control so the Z-axis prompt is right without the user thinking about it.
+   Workflow confidence threshold is set to 0.25 for these to ground reliably. Coping /
+   waterline tile stay on the brush for now (SAM3 won't ground them zero-shot — a
+   future fine-tune or exemplar-box pass adds them). */
+const SF_LEXICON=[
+  {concept:'pool water',                label:'pool water',    orientation:'floor'},
+  {concept:'raised wall',               label:'wall',          orientation:'wall'},
+  {concept:'paver floor',               label:'decking',       orientation:'floor'},
+  {concept:'paver border',              label:'paver border',  orientation:'floor'},
+  {concept:'raised spa spillway wall',  label:'raised wall',   orientation:'wall'},
+  {concept:'raised wall paver cap',     label:'wall cap',      orientation:'floor'}
+];
+let ipState={card:null,img:null,view:null,mask:null,drawing:false,mode:'brush',last:null,painted:false,materialId:null,materialCategory:null,surface:'auto',seg:null,smartSel:new Set()};
+let ipMaterials=[]; let ipMatCat='all';
+
+function openInpaintModal(card,img){
+  const latest=imgState[img.projectImageId]||img;
+  ipState.card=card; ipState.img=latest; ipState.painted=false; ipState.last=null;
+  ipState.materialId=null; ipState.materialCategory=null; ipState.surface='auto';
+  ipState.seg=null; ipState.smartSel=new Set();
+  $('#ipChips').hidden=true; $('#ipChips').innerHTML='';
+  setIpMode('brush');
+  ipSetSurface('auto');
+  $('#ipPrompt').value='';
+  ipLoadMaterials();
+  const im=$('#ipImg');
+  im.onload=()=>ipSetupCanvas(im);
+  im.src=card.querySelector('[data-main]').src;
+  $('#ipModal').classList.add('open');
+  ipRenderHistory();
+}
+function ipSetSurface(s){
+  ipState.surface=s;
+  document.querySelectorAll('#ipSurface .ip-seg-btn').forEach(function(b){
+    b.classList.toggle('active', b.dataset.surface===s);
+  });
+}
+async function ipLoadMaterials(){
+  const cats=$('#ipMatCats'); const pick=$('#ipMatPick');
+  cats.innerHTML=''; pick.innerHTML='<span class="ip-mat-empty">Loading…</span>';
+  try{ const d=await api('/api/materials'); ipMaterials=d.materials||[]; }catch(e){ ipMaterials=[]; }
+  ipMatCat='all';
+  ipRenderMatCats();
+  ipRenderMatSwatches();
+}
+function ipRenderMatCats(){
+  const wrap=$('#ipMatCats'); wrap.innerHTML='';
+  if(!ipMaterials.length) return;
+  const cats=['all'].concat(matCatsPresent(ipMaterials));
+  cats.forEach(function(c){
+    const n=c==='all'?ipMaterials.length:ipMaterials.filter(function(m){return (m.category||'other').toLowerCase()===c;}).length;
+    const chip=el('button','ip-mat-cat'+(c===ipMatCat?' active':''));
+    chip.innerHTML=esc(MAT_LABELS[c]||c)+' <span style="opacity:.7">'+n+'</span>';
+    chip.addEventListener('click',function(){ ipMatCat=c; ipRenderMatCats(); ipRenderMatSwatches(); });
+    wrap.appendChild(chip);
+  });
+}
+function ipRenderMatSwatches(){
+  const pick=$('#ipMatPick'); pick.innerHTML='';
+  // "None" tile — plain text inpaint — always available regardless of filter.
+  const none=el('button','ip-mat-none'+((ipState.materialId==null)?' active':''));
+  none.textContent='None';
+  none.addEventListener('click',()=>ipSelectMaterial(null,none));
+  pick.appendChild(none);
+  if(!ipMaterials.length){
+    const sp=el('span','ip-mat-empty');
+    sp.innerHTML='No materials yet — add some in <b>Library → Materials</b>.';
+    pick.appendChild(sp);
+    return;
   }
-  tabNew.addEventListener('click',function(){ setMode(true); });
-  tabExisting.addEventListener('click',function(){ loadExisting(); setMode(false); });
-  setMode(true);
+  const list=ipMatCat==='all'?ipMaterials:ipMaterials.filter(function(m){return (m.category||'other').toLowerCase()===ipMatCat;});
+  list.forEach(function(m){
+    const sw=el('button','ip-mat-swatch'+((ipState.materialId===m.id)?' active':''));
+    sw.title=(m.name||'Material')+' · '+(m.category||'other');
+    sw.innerHTML='<img src="'+esc(m.imageUrl)+'" alt="">';
+    sw.addEventListener('click',()=>ipSelectMaterial(m,sw));
+    pick.appendChild(sw);
+  });
+}
+function ipSelectMaterial(m,node){
+  document.querySelectorAll('#ipMatPick .ip-mat-swatch, #ipMatPick .ip-mat-none')
+    .forEach(s=>s.classList.remove('active'));
+  node.classList.add('active');
+  ipState.materialId=m?m.id:null;
+  ipState.materialCategory=m?m.category:null;
+  const pr=$('#ipPrompt');
+  pr.placeholder=m
+    ? 'Optional — add scale or layout notes (e.g. large 18×18 pavers, running-bond pattern). The swatch drives the look.'
+    : 'Describe the fix for the painted area — e.g. replace with smooth travertine pavers, matching the surrounding shadows';
+}
+function closeInpaintModal(){
+  $('#ipModal').classList.remove('open');
+  ipState.drawing=false; ipState.last=null; ipState.painted=false;
+}
+/* In-modal result history: step back through saved versions and keep inpainting
+   without leaving the editor. Backed by the same version endpoints the card uses. */
+function ipRenderHistory(){
+  const wrap=$('#ipHistory'); if(!wrap) return;
+  wrap.innerHTML='';
+  const img=ipState.img||{};
+  const vers=img.versions||[];
+  if(!vers.length){
+    const note=el('span','muted');
+    note.textContent='Your inpaint results will stack up here — tap one to step back.';
+    wrap.appendChild(note);
+    return;
+  }
+  vers.forEach(function(v){
+    const th=el('button','ip-hist-thumb'+(v.id===img.active_version_id?' active':''));
+    th.title=(v.source||'version')+(v.prompt?' — '+v.prompt:'');
+    th.innerHTML='<img src="'+esc(v.url)+'" alt=""><span>v'+v.seq+'</span>';
+    th.addEventListener('click',function(){ if(v.id!==ipState.img.active_version_id) ipSetVersion(v.id); });
+    wrap.appendChild(th);
+  });
+  const act=wrap.querySelector('.ip-hist-thumb.active');
+  if(act){ requestAnimationFrame(function(){ wrap.scrollLeft=act.offsetLeft-(wrap.clientWidth/2)+(act.clientWidth/2); }); }
+}
+/* Re-point the editor at the freshest version of the current image (after a generate,
+   a version switch, or a delete) without closing the modal. */
+function ipSyncFromState(preserveSmart){
+  const fresh=ipState.img && imgState[ipState.img.projectImageId];
+  if(!fresh){ ipRenderHistory(); return; }
+  ipState.img=fresh;
+  const newSrc=fresh.current_url||fresh.enhanced_url||'';
+  // After an inpaint generation the composite pins every UNMASKED pixel identical to
+  // the source and keeps the same resolution, so the detected surface masks are still
+  // valid on the new result. Keep the segmentation cache (re-pointed to the new src so
+  // we never re-segment), clear only the just-used selection, and stay in Smart mode —
+  // the user can pick another surface and generate again without re-running Smart select.
+  // The version-step / delete-version paths call this WITHOUT preserveSmart, because
+  // stepping to a different version does change geometry, so those still re-segment.
+  if(preserveSmart && ipState.seg){
+    ipState.seg.src=newSrc;
+    ipState.smartSel=new Set();
+    const im=$('#ipImg');
+    im.onload=()=>{ ipSetupCanvas(im); if(ipState.mode==='smart'){ $('#ipChips').hidden=false; ipRenderChips(); } };
+    im.src=newSrc;
+    ipRenderHistory();
+    return;
+  }
+  ipState.seg=null; ipState.smartSel=new Set();
+  $('#ipChips').hidden=true; $('#ipChips').innerHTML='';
+  setIpMode('brush');
+  const im=$('#ipImg');
+  im.onload=()=>ipSetupCanvas(im);
+  im.src=newSrc;
+  ipRenderHistory();
+}
+async function ipSetVersion(versionId){
+  const id=ipState.img&&ipState.img.projectImageId; if(!id) return;
+  try{
+    await api('/api/version/set',{method:'POST',body:{projectImageId:id,versionId}});
+    await refreshImage(id);
+    ipSyncFromState();
+  }catch(e){ toast(e.message,true); }
+}
+async function ipDeleteCurrent(){
+  const cur=(ipState.img&&imgState[ipState.img.projectImageId])||ipState.img;
+  const id=cur&&cur.projectImageId; const vid=cur&&cur.active_version_id;
+  if(!id) return;
+  if(!vid){ toast('No saved version to remove yet',true); return; }
+  if(!confirm('Remove this version from the history? This cannot be undone.')) return;
+  try{
+    await api('/api/version/delete',{method:'POST',body:{projectImageId:id,versionId:vid}});
+    await refreshImage(id);
+    ipSyncFromState();
+    toast('Version removed');
+  }catch(e){ toast(e.message,true); }
+}
+function ipSetupCanvas(im){
+  const W=im.naturalWidth||im.width, H=im.naturalHeight||im.height;
+  const view=$('#ipView'); view.width=W; view.height=H;
+  view.getContext('2d').clearRect(0,0,W,H);
+  const mask=document.createElement('canvas'); mask.width=W; mask.height=H;
+  const mctx=mask.getContext('2d'); mctx.fillStyle='#000'; mctx.fillRect(0,0,W,H);
+  ipState.view=view; ipState.mask=mask; ipState.painted=false;
+}
+function setIpMode(mode){
+  ipState.mode=mode;
+  $('#ipBrush').classList.toggle('active',mode==='brush');
+  $('#ipEraser').classList.toggle('active',mode==='eraser');
+  $('#ipSmart').classList.toggle('active',mode==='smart');
+  const chips=$('#ipChips');
+  if(mode==='smart'){ chips.hidden=false; ipEnsureSegmented(); }
+  else { chips.hidden=true; }
+}
+/* Build a once-per-concept aqua-tinted canvas from a white-on-transparent mask PNG,
+   so the visible overlay can be composited cheaply on every chip toggle. */
+function ipTintCanvas(img){
+  const c=document.createElement('canvas'); c.width=img.naturalWidth; c.height=img.naturalHeight;
+  const x=c.getContext('2d');
+  x.drawImage(img,0,0);
+  x.globalCompositeOperation='source-in';
+  x.fillStyle='rgba(0,194,199,1)';
+  x.fillRect(0,0,c.width,c.height);
+  return c;
+}
+/* One Roboflow call per image, cached on ipState.seg keyed by the image src. */
+async function ipEnsureSegmented(){
+  const chips=$('#ipChips');
+  const src=ipState.img && (ipState.card.querySelector('[data-main]').src);
+  if(ipState.seg && ipState.seg.src===src){ ipRenderChips(); return; }
+  chips.innerHTML='<span class="ip-chip-note">Detecting surfaces…</span>';
+  try{
+    const d=await api('/api/segment',{method:'POST',body:{imageUrl:src}});
+    const concepts={};
+    (d.concepts||[]).forEach(function(c){
+      const img=new Image(); img.src=c.mask;
+      const entry={found:c.instances_found,orientation:null,img:img,tint:null,bbox:c.bbox};
+      img.onload=function(){ entry.tint=ipTintCanvas(img); };
+      concepts[c.concept]=entry;
+    });
+    // attach orientation from the lexicon so chip clicks can auto-set Floor/Wall
+    SF_LEXICON.forEach(function(l){ if(concepts[l.concept]) concepts[l.concept].orientation=l.orientation; });
+    ipState.seg={src:src, concepts:concepts};
+    ipRenderChips();
+  }catch(e){
+    chips.innerHTML='';
+    const note=el('span','ip-chip-note');
+    note.textContent='Smart select unavailable — use Brush. ('+e.message+')';
+    chips.appendChild(note);
+  }
+}
+function ipRenderChips(){
+  const chips=$('#ipChips'); chips.innerHTML='';
+  const concepts=(ipState.seg&&ipState.seg.concepts)||{};
+  SF_LEXICON.forEach(function(l){
+    const c=concepts[l.concept];
+    const found=c&&c.found>0;
+    const chip=el('button','ip-chip'+(found?'':' disabled')+(ipState.smartSel.has(l.concept)?' active':''));
+    chip.textContent=l.label+(found?' ('+c.found+')':'');
+    chip.dataset.concept=l.concept;
+    if(!found) chip.title='Not detected in this image';
+    chips.appendChild(chip);
+  });
+  const hint=el('span','ip-chip-note');
+  hint.textContent='Pick a surface — Brush still works to refine the selection.';
+  chips.appendChild(hint);
+}
+function ipToggleConcept(name){
+  const c=ipState.seg&&ipState.seg.concepts[name];
+  if(!c||!c.found) return;
+  if(ipState.smartSel.has(name)) ipState.smartSel.delete(name);
+  else { ipState.smartSel.add(name); if(c.orientation) ipSetSurface(c.orientation); }
+  ipRebuildSmart();
+  ipRenderChips();
+}
+/* Rebuild mask + visible overlay from the selected concepts. Union is just stacking
+   the white-on-transparent masks (source-over) over the black mask backdrop, which
+   is exactly the white-on-black PNG /api/inpaint already expects. */
+function ipRebuildSmart(){
+  const mask=ipState.mask, view=ipState.view; if(!mask||!view) return;
+  const W=mask.width, H=mask.height;
+  const m=mask.getContext('2d'); m.globalCompositeOperation='source-over';
+  m.fillStyle='#000'; m.fillRect(0,0,W,H);
+  const v=view.getContext('2d'); v.clearRect(0,0,W,H);
+  let any=false;
+  ipState.smartSel.forEach(function(name){
+    const c=ipState.seg.concepts[name]; if(!c||!c.img||!c.img.complete) return;
+    m.drawImage(c.img,0,0,W,H);
+    if(c.tint){ v.save(); v.globalAlpha=.5; v.drawImage(c.tint,0,0,W,H); v.restore(); }
+    any=true;
+  });
+  ipState.painted=any;
+}
+function ipClearMask(){
+  if(!ipState.view||!ipState.mask) return;
+  const W=ipState.view.width, H=ipState.view.height;
+  ipState.view.getContext('2d').clearRect(0,0,W,H);
+  const mctx=ipState.mask.getContext('2d'); mctx.fillStyle='#000'; mctx.fillRect(0,0,W,H);
+  ipState.painted=false;
+  if(ipState.smartSel.size){ ipState.smartSel.clear(); ipRenderChips(); }
+}
+function ipPos(e){
+  const v=ipState.view, r=v.getBoundingClientRect();
+  const sx=v.width/r.width, sy=v.height/r.height;
+  return { x:(e.clientX-r.left)*sx, y:(e.clientY-r.top)*sy, scale:sx };
+}
+function ipStroke(p){
+  if(!ipState.view||!ipState.mask) return;
+  if(ipState.mode==='smart') return; // chips drive the mask in smart-select mode
+  const lw=Math.max(1,(+$('#ipSize').value)*p.scale);
+  const erase=ipState.mode==='eraser';
+  const from=ipState.last||p;
+  // visible aqua overlay
+  const v=ipState.view.getContext('2d');
+  v.lineCap='round'; v.lineJoin='round'; v.lineWidth=lw;
+  v.globalCompositeOperation=erase?'destination-out':'source-over';
+  v.strokeStyle=erase?'rgba(0,0,0,1)':'rgba(0,194,199,.5)';
+  v.fillStyle=v.strokeStyle;
+  v.beginPath(); v.moveTo(from.x,from.y); v.lineTo(p.x,p.y); v.stroke();
+  v.beginPath(); v.arc(p.x,p.y,lw/2,0,Math.PI*2); v.fill();
+  // hidden white-on-black mask (source of truth)
+  const m=ipState.mask.getContext('2d');
+  m.lineCap='round'; m.lineJoin='round'; m.lineWidth=lw;
+  m.globalCompositeOperation='source-over';
+  m.strokeStyle=erase?'#000':'#fff'; m.fillStyle=m.strokeStyle;
+  m.beginPath(); m.moveTo(from.x,from.y); m.lineTo(p.x,p.y); m.stroke();
+  m.beginPath(); m.arc(p.x,p.y,lw/2,0,Math.PI*2); m.fill();
+  v.globalCompositeOperation='source-over';
+  ipState.last=p;
+  if(!erase) ipState.painted=true;
+}
+async function runInpaint(){
+  if(!ipState.painted){ toast('Paint over the area to fix first',true); return; }
+  const prompt=$('#ipPrompt').value.trim();
+  const materialId=ipState.materialId;
+  if(!prompt && !materialId){ toast('Pick a material or describe the correction first',true); return; }
+  const img=ipState.img, card=ipState.card;
+  const maskData=ipState.mask.toDataURL('image/png');
+  const mainImg=card.querySelector('[data-main]');
+  const src=mainImg.src;
+  const go=$('#ipGo'); go.disabled=true; go.textContent='Starting…';
+  try{
+    await api('/api/inpaint',{method:'POST',body:{imageUrl:src,jobId:img.jobId,imageIndex:String(img.image_index),prompt,maskData,materialId,surface:ipState.surface,source_w:mainImg.naturalWidth||'',source_h:mainImg.naturalHeight||''}});
+    loadCredits();
+    go.textContent='Generating…';
+    pollStatus('/api/inpaint-status',img.jobId,img.image_index,'inpainted_url',async()=>{
+      go.disabled=false; go.textContent='Generate inpaint';
+      await refreshImage(img.projectImageId);
+      if($('#ipModal').classList.contains('open')){
+        ipSyncFromState(true);             // stay in the editor, keep smart-select masks, show the new result + history
+        $('#ipPrompt').value='';
+        toast(materialId?'Material swap saved — keep editing or close':'Inpaint saved — keep editing or close');
+      }else{
+        toast(materialId?'Material swap saved as a new version':'Inpaint saved as a new version');
+      }
+    },()=>{ go.disabled=false; go.textContent='Generate inpaint'; });
+  }catch(e){ go.disabled=false; go.textContent='Generate inpaint'; if(e.code!=='INSUFFICIENT_CREDITS') toast(e.message,true); }
+}
+// wire modal controls once
+$('#ipView').addEventListener('pointerdown',e=>{ ipState.drawing=true; ipState.last=null; ipStroke(ipPos(e)); e.preventDefault(); });
+window.addEventListener('pointermove',e=>{ if(ipState.drawing) ipStroke(ipPos(e)); });
+window.addEventListener('pointerup',()=>{ ipState.drawing=false; ipState.last=null; });
+$('#ipBrush').addEventListener('click',()=>setIpMode('brush'));
+$('#ipEraser').addEventListener('click',()=>setIpMode('eraser'));
+$('#ipSmart').addEventListener('click',()=>setIpMode('smart'));
+$('#ipChips').addEventListener('click',e=>{ const b=e.target.closest('.ip-chip'); if(b&&!b.classList.contains('disabled')) ipToggleConcept(b.dataset.concept); });
+$('#ipSurface').addEventListener('click',e=>{ const b=e.target.closest('.ip-seg-btn'); if(b) ipSetSurface(b.dataset.surface); });
+$('#ipClear').addEventListener('click',ipClearMask);
+$('#ipGo').addEventListener('click',runInpaint);
+$('#ipTrash').addEventListener('click',ipDeleteCurrent);
+$('#ipClose').addEventListener('click',closeInpaintModal);
+$('#ipCancel').addEventListener('click',closeInpaintModal);
+$('#ipModal').addEventListener('click',e=>{ if(e.target.id==='ipModal') closeInpaintModal(); });
+$('#refClose').addEventListener('click',closeRefModal);
+$('#refCancel').addEventListener('click',closeRefModal);
+$('#refModal').addEventListener('click',e=>{ if(e.target.id==='refModal') closeRefModal(); });
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape') return;
+  if($('#refModal').classList.contains('open')) closeRefModal();
+  else if($('#ipModal').classList.contains('open')) closeInpaintModal();
+});
+
+/* ── Library: per-user brand assets (logos now; materials next phase) ── */
+function showOnlyView(id){
+  ['albumsView','albumView','trashView','libraryView'].forEach(function(v){
+    var n=document.getElementById(v); if(n) n.classList.toggle('hidden', v!==id);
+  });
+}
+function openLibrary(){
+  showOnlyView('libraryView');
+  window.scrollTo({top:0,behavior:'smooth'});
+  switchLibTab('logos');
+}
+function switchLibTab(tab){
+  document.querySelectorAll('.lib-tab').forEach(function(b){ b.classList.toggle('active', b.dataset.lib===tab); });
+  $('#libLogos').classList.toggle('hidden', tab!=='logos');
+  $('#libMaterials').classList.toggle('hidden', tab!=='materials');
+  if(tab==='logos') loadLogos();
+  if(tab==='materials') loadMaterials();
+}
+async function loadLogos(){
+  const grid=$('#logoGrid');
+  grid.innerHTML='<div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div>';
+  try{
+    const d=await api('/api/logos'); const logos=d.logos||[];
+    grid.innerHTML='';
+    const add=el('button','asset-add');
+    add.innerHTML='<span class="plus">＋</span><span>Upload logo</span>';
+    add.addEventListener('click',pickLogoFile);
+    grid.appendChild(add);
+    logos.forEach(function(l){ grid.appendChild(buildAsset(l)); });
+  }catch(e){ grid.innerHTML='<div class="empty"><h2>Could not load logos</h2></div>'; }
+}
+function buildAsset(l){
+  const a=el('div','asset');
+  a.innerHTML=
+    '<div class="asset-img"><img src="'+esc(l.imageUrl)+'" alt=""></div>'+
+    '<div class="asset-name">'+esc(l.name||'Logo')+'</div>'+
+    '<button class="asset-del" title="Delete logo">🗑</button>';
+  a.querySelector('.asset-del').addEventListener('click',function(){ deleteLogo(l,a); });
+  return a;
+}
+function pickLogoFile(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/png,image/svg+xml,image/webp,image/jpeg,image/*';
+  inp.addEventListener('change',function(){ if(inp.files&&inp.files[0]) uploadLogo(inp.files[0]); });
+  inp.click();
+}
+async function uploadLogo(file){
+  if(file.size>5*1024*1024){ toast('Logo must be under 5MB',true); return; }
+  toast('Uploading logo…');
+  try{
+    const fd=new FormData(); fd.append('logo',file);
+    const res=await fetch('/api/logos',{method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:fd});
+    if(res.status===401){ location.replace('/'); return; }
+    let d=null; try{ d=await res.json(); }catch(e){}
+    if(!res.ok) throw new Error((d&&d.error)||'Upload failed');
+    toast('Logo added'); loadLogos();
+  }catch(e){ toast(e.message,true); }
+}
+async function deleteLogo(l,node){
+  if(!confirm('Delete this logo? Images you have already branded keep their logo.')) return;
+  try{ await api('/api/logos/delete',{method:'POST',body:{logoId:l.id}}); node.remove(); toast('Logo deleted'); }
+  catch(e){ toast(e.message,true); }
+}
+
+/* ── Library: Materials (per-user texture swatches for material-aware inpaint) ── */
+const MAT_ORDER=['paver','tile','stone','decking','gravel','other'];
+const MAT_LABELS={paver:'Pavers',tile:'Tile',stone:'Stone',decking:'Decking',gravel:'Gravel',other:'Other',all:'All'};
+function matCatsPresent(materials){
+  const present=[]; materials.forEach(function(m){ const c=(m.category||'other').toLowerCase(); if(present.indexOf(c)<0) present.push(c); });
+  const ordered=MAT_ORDER.filter(function(c){return present.indexOf(c)>=0;});
+  present.forEach(function(c){ if(ordered.indexOf(c)<0) ordered.push(c); });
+  return ordered;
+}
+async function loadMaterials(){
+  const host=$('#materialGrid');
+  host.innerHTML='<div class="asset-grid"><div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div><div class="skeleton" style="aspect-ratio:1/1"></div></div>';
+  try{
+    const d=await api('/api/materials'); const materials=d.materials||[];
+    host.innerHTML='';
+    // Upload control (its category comes from the toolbar select, so keep it standalone on top).
+    const row=el('div','mat-upload-row');
+    const add=el('button','asset-add');
+    add.innerHTML='<span class="plus">＋</span><span>Upload material</span>';
+    add.addEventListener('click',pickMaterialFile);
+    row.appendChild(add); host.appendChild(row);
+    if(!materials.length) return;
+    const groups={};
+    materials.forEach(function(m){ const c=(m.category||'other').toLowerCase(); (groups[c]=groups[c]||[]).push(m); });
+    matCatsPresent(materials).forEach(function(c){
+      const sec=el('div','mat-section');
+      const h=el('div','mat-section-head');
+      h.innerHTML=esc(MAT_LABELS[c]||c)+' <span class="count">'+groups[c].length+'</span>';
+      sec.appendChild(h);
+      const g=el('div','asset-grid');
+      groups[c].forEach(function(m){ g.appendChild(buildMaterialAsset(m)); });
+      sec.appendChild(g); host.appendChild(sec);
+    });
+  }catch(e){ host.innerHTML='<div class="empty"><h2>Could not load materials</h2></div>'; }
+}
+function buildMaterialAsset(m){
+  const a=el('div','asset');
+  a.innerHTML=
+    '<div class="asset-img"><img src="'+esc(m.imageUrl)+'" alt="" style="max-width:100%;max-height:100%;object-fit:cover"></div>'+
+    '<div class="asset-name">'+esc(m.name||'Material')+'</div>'+
+    '<div class="asset-cat">'+esc(m.category||'other')+'</div>'+
+    '<button class="asset-del" title="Delete material">🗑</button>';
+  a.querySelector('.asset-del').addEventListener('click',function(){ deleteMaterial(m,a); });
+  return a;
+}
+function pickMaterialFile(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='image/jpeg,image/png,image/webp,image/*';
+  inp.addEventListener('change',function(){ if(inp.files&&inp.files[0]) uploadMaterial(inp.files[0]); });
+  inp.click();
+}
+async function uploadMaterial(file){
+  if(file.size>5*1024*1024){ toast('Material must be under 5MB',true); return; }
+  const category=($('#matCategory')&&$('#matCategory').value)||'other';
+  toast('Uploading material…');
+  try{
+    const fd=new FormData(); fd.append('material',file); fd.append('category',category);
+    const res=await fetch('/api/materials',{method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:fd});
+    if(res.status===401){ location.replace('/'); return; }
+    let d=null; try{ d=await res.json(); }catch(e){}
+    if(!res.ok) throw new Error((d&&d.error)||'Upload failed');
+    toast('Material added'); loadMaterials();
+  }catch(e){ toast(e.message,true); }
+}
+async function deleteMaterial(m,node){
+  if(!confirm('Delete this material? Inpaints you already generated are unaffected.')) return;
+  try{ await api('/api/materials/delete',{method:'POST',body:{materialId:m.id}}); node.remove(); toast('Material deleted'); }
+  catch(e){ toast(e.message,true); }
+}
+$('#libraryBtn').addEventListener('click',openLibrary);
+/* album sort control */
+(function(){
+  const sel=$('#albumSort'); if(!sel) return;
+  sel.value=albumSort;
+  sel.addEventListener('change',function(){
+    albumSort=sel.value; localStorage.setItem('albumSort',albumSort);
+    if(ALBUMS.length) renderAlbums();
+  });
 })();
+/* "build your Library" banner — dismissible, remembered per browser */
+(function(){
+  const b=$('#libBanner'); if(!b) return;
+  if(localStorage.getItem('libBannerDismissed')!=='1') b.hidden=false;
+  const open=$('#libBannerOpen'); if(open) open.addEventListener('click',openLibrary);
+  const x=$('#libBannerX'); if(x) x.addEventListener('click',function(){
+    b.hidden=true; localStorage.setItem('libBannerDismissed','1');
+  });
+})();
+$('#libBack').addEventListener('click',function(){ showOnlyView('albumsView'); loadAlbums(); });
+document.querySelectorAll('.lib-tab').forEach(function(b){ b.addEventListener('click',function(){ switchLibTab(b.dataset.lib); }); });
 
-async function pollStatus(/* retired */) { /* dashboard cutover: replaced by redirect to /dashboard.html?album= */ }
+/* ── Trash: soft delete + restore (30-day purge runs server-side via cron) ── */
+async function deleteImage(card,img){
+  if(!confirm('Move this design to Trash? You can restore it within 30 days.')) return;
+  try{
+    await api('/api/image/delete',{method:'POST',body:{projectImageId:img.projectImageId}});
+    card.remove(); delete imgState[img.projectImageId];
+    toast('Moved to Trash');
+    const grid=$('#cardGrid');
+    if(grid && !grid.querySelector('.card')){ grid.innerHTML='<div class="empty"><h2>No images</h2></div>'; }
+  }catch(e){ toast(e.message,true); }
+}
+async function openTrash(){
+  $('#albumsView').classList.add('hidden');
+  $('#albumView').classList.add('hidden');
+  $('#libraryView').classList.add('hidden');
+  $('#trashView').classList.remove('hidden');
+  window.scrollTo({top:0,behavior:'smooth'});
+  const grid=$('#trashGrid'); grid.innerHTML='<div class="skeleton"></div><div class="skeleton"></div>';
+  try{
+    const d=await api('/api/trash'); const imgs=d.images||[];
+    grid.innerHTML='';
+    if(!imgs.length){ grid.innerHTML='<div class="empty"><h2>Trash is empty</h2></div>'; return; }
+    imgs.forEach(im=>{
+      const days=Math.max(0,30-Math.floor((Date.now()-new Date(im.deleted_at).getTime())/86400000));
+      const tile=el('div','tile');
+      tile.innerHTML=
+        '<div class="tile-cover"><img src="'+esc(im.thumb||'')+'" alt=""><div class="tile-scrim"></div></div>'+
+        '<div style="padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px">'+
+          '<div><div style="font-weight:600">'+esc(im.albumName)+'</div>'+
+          '<div class="muted" style="font-size:12px">Removed in '+days+' day'+(days===1?'':'s')+'</div></div>'+
+          '<button class="ghost-btn" data-restore>Restore</button>'+
+        '</div>';
+      tile.querySelector('[data-restore]').addEventListener('click',async()=>{
+        try{
+          await api('/api/image/restore',{method:'POST',body:{projectImageId:im.projectImageId}});
+          tile.remove(); toast('Restored');
+          if(!grid.querySelector('.tile')){ grid.innerHTML='<div class="empty"><h2>Trash is empty</h2></div>'; }
+        }catch(e){ toast(e.message,true); }
+      });
+      grid.appendChild(tile);
+    });
+  }catch(e){ grid.innerHTML='<div class="empty"><h2>Could not load Trash</h2></div>'; }
+}
+$('#trashBtn').addEventListener('click',openTrash);
+$('#trashBack').addEventListener('click',()=>{ $('#trashView').classList.add('hidden'); $('#albumsView').classList.remove('hidden'); loadAlbums(); });
 
+/* ── Logo placement modal (deterministic composite — server-side sharp) ── */
+let lgState={card:null,img:null,logoId:null,logoUrl:null,aspect:1,drag:null};
+function cleanBaseClient(img){
+  if(img.versions&&img.versions.length){
+    // Walk back from the ACTIVE version (the one currently displayed / stepped-to in
+    // the history strip), not the newest in the chain, so the logo modal previews the
+    // image the user is actually on. We still skip logo versions so a new logo overlays
+    // the clean base beneath rather than stacking on an existing logo.
+    let start=activeIdx(img);
+    if(start<0) start=img.versions.length-1;
+    for(let i=start;i>=0;i--){ if(img.versions[i].source!=='logo') return img.versions[i].url; }
+  }
+  return img.enhanced_url||img.current_url||'';
+}
+async function openLogoModal(card,img){
+  const latest=imgState[img.projectImageId]||img;
+  lgState={card:card,img:latest,logoId:null,logoUrl:null,aspect:1,drag:null};
+  const box=$('#lgBox'); box.removeAttribute('style'); box.style.display='none';
+  $('#lgOpacity').value=100;
+  $('#lgImg').src=cleanBaseClient(latest);
+  const pick=$('#lgPick'); pick.innerHTML='<span class="lg-pick-empty">Loading…</span>';
+  $('#lgModal').classList.add('open');
+  let logos=[];
+  try{ const d=await api('/api/logos'); logos=d.logos||[]; }catch(e){}
+  pick.innerHTML='';
+  if(!logos.length){
+    const sp=el('span','lg-pick-empty'); sp.innerHTML='No logos yet — add one in <b>Library → Logos</b>.'; pick.appendChild(sp);
+    return;
+  }
+  const swatches=[];
+  logos.forEach(l=>{
+    const sw=el('button','lg-swatch'); sw.innerHTML='<img src="'+esc(l.imageUrl)+'" alt="">';
+    sw.addEventListener('click',()=>selectLogo(l,sw)); pick.appendChild(sw); swatches.push(sw);
+  });
+  // preselect the effective placement (image override, else album default)
+  const eff=latest.logoOverride||current.logoDefault||null;
+  if(eff){
+    const mi=logos.findIndex(l=>l.imageUrl===eff.logoUrl);
+    if(mi>=0) selectLogo(logos[mi],swatches[mi],eff);
+  }
+}
+function defaultBox(){
+  const sr=$('#lgStage').getBoundingClientRect(), box=$('#lgBox');
+  const w=0.18*sr.width, h=w/lgState.aspect;
+  box.style.width=w+'px'; box.style.height=h+'px';
+  box.style.left=(sr.width-w-0.05*sr.width)+'px'; box.style.top=(0.05*sr.height)+'px';
+}
+function positionBoxFromPlacement(p){
+  const sr=$('#lgStage').getBoundingClientRect(), box=$('#lgBox');
+  const w=(p.w||0.18)*sr.width, h=w/lgState.aspect;
+  box.style.width=w+'px'; box.style.height=h+'px';
+  box.style.left=((p.x||0)*sr.width)+'px'; box.style.top=((p.y||0)*sr.height)+'px';
+  const op=(p.opacity==null?1:p.opacity); $('#lgOpacity').value=Math.round(op*100); box.style.opacity=op;
+}
+function selectLogo(logo,swatchEl,placement){
+  lgState.logoId=logo.id; lgState.logoUrl=logo.imageUrl;
+  document.querySelectorAll('.lg-swatch').forEach(s=>s.classList.remove('active'));
+  if(swatchEl) swatchEl.classList.add('active');
+  const box=$('#lgBox'), bi=$('#lgBoxImg');
+  bi.onload=function(){
+    lgState.aspect=(bi.naturalWidth||1)/(bi.naturalHeight||1);
+    box.style.display='block';
+    if(placement) positionBoxFromPlacement(placement);
+    else if(!box.style.width) defaultBox();
+    else { const w=parseFloat(box.style.width)||0; box.style.height=(w/lgState.aspect)+'px'; }
+  };
+  bi.src=logo.imageUrl;
+}
+function lgPointerDown(e){
+  if(!lgState.logoUrl) return;
+  const box=$('#lgBox'), sr=$('#lgStage').getBoundingClientRect();
+  lgState.drag={ resize:(e.target===$('#lgResize')), startX:e.clientX, startY:e.clientY,
+    left:parseFloat(box.style.left)||0, top:parseFloat(box.style.top)||0, w:parseFloat(box.style.width)||0, sr:sr };
+  e.preventDefault(); e.stopPropagation();
+}
+function lgPointerMove(e){
+  const d=lgState.drag; if(!d) return; const box=$('#lgBox'), sr=d.sr;
+  const dx=e.clientX-d.startX, dy=e.clientY-d.startY;
+  if(d.resize){
+    let w=Math.max(20,d.w+dx); w=Math.min(w,sr.width-d.left);
+    box.style.width=w+'px'; box.style.height=(w/lgState.aspect)+'px';
+  } else {
+    const w=parseFloat(box.style.width)||0, h=parseFloat(box.style.height)||0;
+    let left=Math.min(Math.max(d.left+dx,0),sr.width-w), top=Math.min(Math.max(d.top+dy,0),sr.height-h);
+    box.style.left=left+'px'; box.style.top=top+'px';
+  }
+  e.preventDefault();
+}
+function placementNow(){
+  const sr=$('#lgStage').getBoundingClientRect(), br=$('#lgBox').getBoundingClientRect();
+  return { x:(br.left-sr.left)/sr.width, y:(br.top-sr.top)/sr.height, w:br.width/sr.width, opacity:(+$('#lgOpacity').value)/100 };
+}
+function closeLogoModal(){ $('#lgModal').classList.remove('open'); lgState.drag=null; }
+async function lgApply(scope){
+  if(!lgState.logoUrl){ toast('Pick a logo first',true); return; }
+  const p=placementNow(), img=lgState.img;
+  const a=$('#lgApplyAll'), o=$('#lgApplyOne'); a.disabled=o.disabled=true; a.textContent='Applying…';
+  try{
+    if(scope==='all') await api('/api/album/'+encodeURIComponent(current.albumId)+'/logo',{method:'POST',body:{logoId:lgState.logoId,placement:p}});
+    else await api('/api/image/'+encodeURIComponent(img.projectImageId)+'/logo',{method:'POST',body:{logoId:lgState.logoId,placement:p}});
+    closeLogoModal(); toast(scope==='all'?'Logo applied to album':'Logo applied to this image');
+    openAlbum({albumId:current.albumId,name:current.name});
+  }catch(e){ toast(e.message,true); }
+  finally{ a.disabled=o.disabled=false; a.textContent='Set as album default'; }
+}
+async function lgRemove(){
+  if(!confirm('Remove the logo from every image in this album?')) return;
+  try{
+    await api('/api/album/'+encodeURIComponent(current.albumId)+'/logo/remove',{method:'POST'});
+    closeLogoModal(); toast('Logo removed'); openAlbum({albumId:current.albumId,name:current.name});
+  }catch(e){ toast(e.message,true); }
+}
+$('#lgBox').addEventListener('pointerdown',lgPointerDown);
+window.addEventListener('pointermove',lgPointerMove);
+window.addEventListener('pointerup',()=>{ lgState.drag=null; });
+$('#lgOpacity').addEventListener('input',()=>{ $('#lgBox').style.opacity=(+$('#lgOpacity').value)/100; });
+$('#lgApplyAll').addEventListener('click',()=>lgApply('all'));
+$('#lgApplyOne').addEventListener('click',()=>lgApply('one'));
+$('#lgRemove').addEventListener('click',lgRemove);
+$('#lgClose').addEventListener('click',closeLogoModal);
+$('#lgModal').addEventListener('click',e=>{ if(e.target.id==='lgModal') closeLogoModal(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&$('#lgModal').classList.contains('open')) closeLogoModal(); });
+
+/* ── Lightbox ── */
+function openLightbox(src){ $('#lightboxImg').src=src; $('#lightbox').classList.add('open'); }
+$('#lightbox').addEventListener('click',()=>$('#lightbox').classList.remove('open'));
+document.addEventListener('keydown',e=>{ if(e.key==='Escape')$('#lightbox').classList.remove('open'); });
+
+$('#signOut').addEventListener('click',()=>{ localStorage.removeItem('authToken'); location.replace('/'); });
+
+/* ── Boot ── */
+loadCredits();
+loadAlbums();
+const _autoAlbum=new URLSearchParams(location.search).get('album');
+if(_autoAlbum) openAlbum({albumId:_autoAlbum,name:''});
 </script>
 </body>
 </html>
