@@ -17,12 +17,24 @@ const upload = multer();
 const N8N_BASE_URL = 'https://courteous-solace-production-413f.up.railway.app';
 const CALLBACK_SECRET = 'sf_upscale_callback_2024';
 
-// §8E SAM3 smart-select (Roboflow hosted serverless workflow). Key is server-side
-// only — never shipped to the browser. Workspace / workflow default to the user's
-// own "landscape-texture-swap-segmentation" workflow (stock sam3/sam3_final inside).
-const ROBOFLOW_API_URL   = process.env.ROBOFLOW_API_URL   || 'https://serverless.roboflow.com';
-const ROBOFLOW_WORKSPACE = process.env.ROBOFLOW_WORKSPACE || 'es-workspace-mnemt';
-const ROBOFLOW_WORKFLOW  = process.env.ROBOFLOW_WORKFLOW_ID || 'landscape-texture-swap-segmentation-1782604837524';
+// §8E SAM3 smart-select (Replicate hosted SAM3, mattsays/sam3-image). Token is
+// server-side only — never shipped to the browser; set REPLICATE_API_TOKEN in the
+// Railway env. SAM3-image takes ONE text prompt per prediction, so /api/segment
+// fans out one prediction per surface concept below (in parallel) and returns the
+// same {concept, instances_found, bbox, mask} shape the old Roboflow path did, so
+// the dashboard is unchanged. Pin the version hash — do not float to latest.
+const REPLICATE_SEGMENT_VERSION = process.env.REPLICATE_SEGMENT_VERSION
+  || 'mattsays/sam3-image:d73db077226443ba4fafd34e233b3626b552eac2a433f90c7c32a9ac89bd9e72';
+// Confidence threshold: matches the 0.25 the old Roboflow workflow used to ground
+// these surfaces reliably (the model default of 0.5 detects noticeably less).
+const SEGMENT_THRESHOLD = Number(process.env.SEGMENT_THRESHOLD || 0.25);
+// Concepts to segment — MUST match the dashboard SF_LEXICON `concept` strings
+// verbatim (the returned mask is keyed by the prompt we send here). Coping /
+// waterline tile intentionally omitted (SAM3 won't ground them zero-shot).
+const SF_SEGMENT_CONCEPTS = [
+  'pool water', 'raised wall', 'paver floor',
+  'paver border', 'raised spa spillway wall', 'raised wall paver cap'
+];
 
 // Catalog skip-existing endpoint /api/catalog-slugs added (1.1.0).
 // Texture catalog + per-user true-copy seeding added (1.0.9): /api/catalog-upsert
@@ -977,62 +989,108 @@ async function bufferToMaskPng(buf, w, h) {
 app.post('/api/segment', requireAuth, async (req, res) => {
   const { imageUrl } = req.body || {};
   if (!imageUrl) return res.status(400).json({ error: 'Missing imageUrl' });
-  if (!process.env.ROBOFLOW_API_KEY) {
-    console.error('Segment error: ROBOFLOW_API_KEY not set');
+  if (!process.env.REPLICATE_API_TOKEN) {
+    console.error('Segment error: REPLICATE_API_TOKEN not set');
     return res.status(503).json({ error: 'Smart select is not configured' });
   }
 
-  try {
-    // One hosted SAM3 pass; the workflow has the surface lexicon baked in, so every
-    // call returns all concepts at once (the precompute pattern — one call per image).
-    const url = `${ROBOFLOW_API_URL}/infer/workflows/${ROBOFLOW_WORKSPACE}/${ROBOFLOW_WORKFLOW}`;
-    const rf = await axios.post(url, {
-      api_key: process.env.ROBOFLOW_API_KEY,
-      inputs: { image: { type: 'url', value: imageUrl } },
-      use_cache: true
-    }, { headers: { 'Content-Type': 'application/json' }, timeout: 120000 });
+  // Replicate wants the bare 64-char version id in the REST body; strip any
+  // owner/model: prefix so either form of REPLICATE_SEGMENT_VERSION works.
+  const versionId = REPLICATE_SEGMENT_VERSION.includes(':')
+    ? REPLICATE_SEGMENT_VERSION.split(':').pop()
+    : REPLICATE_SEGMENT_VERSION;
 
-    // SDK returns the outputs array directly; HTTP wraps it in { outputs: [...] }.
-    const outputs = rf.data && (rf.data.outputs || rf.data);
-    const out = Array.isArray(outputs) ? outputs[0] : outputs;
-    const sm = out && out.segmentation_masks;
-    if (!sm || !sm.image || !Array.isArray(sm.predictions)) {
-      console.error('Segment error: unexpected Roboflow shape', JSON.stringify(rf.data).slice(0, 300));
-      return res.status(502).json({ error: 'Segmentation failed' });
-    }
+  // Segment ONE surface concept via SAM3 (mattsays/sam3-image). Returns the same
+  // per-concept object the old Roboflow path produced, or null on a miss/failure
+  // so one bad concept never sinks the whole request (the chip just stays disabled,
+  // exactly as before when a concept had zero predictions).
+  async function segmentConcept(concept) {
+    try {
+      // Prefer: wait=60 keeps this a single blocking call (like the old Roboflow
+      // request) instead of create-then-poll. mask_only + return_zip:false gives a
+      // single B/W mask image (no zip to unpack, no RLE to decode).
+      const pred = await axios.post(
+        'https://api.replicate.com/v1/predictions',
+        {
+          version: versionId,
+          input: {
+            image: imageUrl,
+            prompt: concept,
+            threshold: SEGMENT_THRESHOLD,
+            mask_only: true,
+            return_zip: false,
+            save_overlay: false
+          }
+        },
+        {
+          headers: {
+            'Authorization': 'Bearer ' + process.env.REPLICATE_API_TOKEN,
+            'Content-Type': 'application/json',
+            'Prefer': 'wait=60'
+          },
+          timeout: 90000
+        }
+      );
 
-    const W = sm.image.width, H = sm.image.height;
+      const status = pred.data && pred.data.status;
+      const rawOut = pred.data && pred.data.output;
+      const maskUrl = Array.isArray(rawOut) ? rawOut[0] : rawOut;
+      // If the wait window elapsed before completion, treat as a miss rather than
+      // blocking further (graceful — the surface just won't get a chip this pass).
+      if (status !== 'succeeded' || !maskUrl) return null;
 
-    // Group predictions by concept (the `class` field), then union each group's RLE
-    // masks into one buffer so a concept with N instances becomes one clean mask.
-    const groups = {};
-    for (const p of sm.predictions) {
-      const name = p.class || p.class_name;
-      if (!name || !p.rle_mask || !p.rle_mask.counts) continue;
-      if (!groups[name]) {
-        groups[name] = { buf: new Uint8Array(W * H), count: 0,
-          bbox: { x0: W, y0: H, x1: -1, y1: -1 } };
+      // Fetch the B/W mask and convert white-on-black -> white-on-TRANSPARENT, which
+      // is what the dashboard's tint (source-in on alpha) and union (source-over)
+      // expect. Also derive a bbox + presence flag from the white pixels.
+      const imgResp = await axios.get(maskUrl, { responseType: 'arraybuffer', timeout: 30000 });
+      const { data, info } = await sharp(Buffer.from(imgResp.data))
+        .greyscale().raw().toBuffer({ resolveWithObject: true });
+      const w = info.width, h = info.height;
+      const rgba = Buffer.alloc(w * h * 4); // zero-filled => transparent black
+      const bbox = { x0: w, y0: h, x1: -1, y1: -1 };
+      let count = 0;
+      for (let i = 0; i < w * h; i++) {
+        if (data[i] > 127) {
+          const o = i * 4;
+          rgba[o] = 255; rgba[o + 1] = 255; rgba[o + 2] = 255; rgba[o + 3] = 255;
+          const row = (i / w) | 0, col = i % w;
+          if (col < bbox.x0) bbox.x0 = col;
+          if (col > bbox.x1) bbox.x1 = col;
+          if (row < bbox.y0) bbox.y0 = row;
+          if (row > bbox.y1) bbox.y1 = row;
+          count++;
+        }
       }
-      orRleIntoBuffer(p.rle_mask, groups[name].buf, W, H, groups[name].bbox);
-      groups[name].count++;
+      if (!count) return null; // nothing grounded -> omit, so the chip stays disabled
+      const png = await sharp(rgba, { raw: { width: w, height: h, channels: 4 } }).png().toBuffer();
+      return {
+        concept,
+        // SAM3-image returns a merged mask, not per-instance counts; report presence.
+        instances_found: 1,
+        bbox: { x: bbox.x0, y: bbox.y0, w: bbox.x1 - bbox.x0 + 1, h: bbox.y1 - bbox.y0 + 1 },
+        mask: 'data:image/png;base64,' + png.toString('base64'),
+        _w: w, _h: h
+      };
+    } catch (e) {
+      const detail = e.response ? JSON.stringify(e.response.data).slice(0, 200) : e.message;
+      console.error('Segment concept "' + concept + '" failed:', detail);
+      return null;
     }
+  }
 
-    const concepts = [];
-    for (const name of Object.keys(groups)) {
-      const g = groups[name];
-      concepts.push({
-        concept: name,
-        instances_found: g.count,
-        bbox: g.bbox.x1 < 0 ? null
-          : { x: g.bbox.x0, y: g.bbox.y0, w: g.bbox.x1 - g.bbox.x0 + 1, h: g.bbox.y1 - g.bbox.y0 + 1 },
-        mask: await bufferToMaskPng(g.buf, W, H)
-      });
-    }
-
+  try {
+    // Fan out one prediction per concept in parallel. Wall-time ~ one cold start +
+    // one inference (not N of them), and the first request warms the model for the rest.
+    const results = await Promise.all(SF_SEGMENT_CONCEPTS.map(segmentConcept));
+    const concepts = results.filter(Boolean);
+    // Mask dims match the input image; the dashboard scales masks to its canvas, so
+    // this is informational only. Fall back to 0 when nothing was detected.
+    const first = concepts[0];
+    const W = first ? first._w : 0, H = first ? first._h : 0;
+    concepts.forEach(c => { delete c._w; delete c._h; });
     return res.status(200).json({ source_w: W, source_h: H, concepts });
   } catch (error) {
-    const detail = error.response ? JSON.stringify(error.response.data).slice(0, 300) : error.message;
-    console.error('Segment error:', detail);
+    console.error('Segment error:', error.message);
     return res.status(502).json({ error: 'Segmentation failed' });
   }
 });
