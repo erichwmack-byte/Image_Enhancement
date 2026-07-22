@@ -17,6 +17,12 @@ const upload = multer();
 const N8N_BASE_URL = 'https://courteous-solace-production-413f.up.railway.app';
 const CALLBACK_SECRET = 'sf_upscale_callback_2024';
 
+// Free-trial grant. Set TRIAL_CREDITS=0 in the env to switch the trial off entirely
+// without a code change. Granted once per user, only after email verification, and
+// only to users who have never had a credits row (i.e. never purchased) — see
+// grantTrialIfEligible. 1 credit = one enhance/refine/inpaint/upscale.
+const TRIAL_CREDITS = Number(process.env.TRIAL_CREDITS || 50);
+
 // §8E SAM3 smart-select (Replicate hosted SAM3, mattsays/sam3-image). Token is
 // server-side only — never shipped to the browser; set REPLICATE_API_TOKEN in the
 // Railway env. SAM3-image takes ONE text prompt per prediction, so /api/segment
@@ -154,14 +160,86 @@ app.post('/auth/update-password', requireAuth, async (req, res) => {
 
 // ── Credits Routes ────────────────────────────────────────────────────────────
 app.get('/api/credits', requireAuth, async (req, res) => {
-  const { data, error } = await supabase
+  // The dashboard calls this on load, so it doubles as the trial-claim path: a newly
+  // verified user gets their credits here without any extra client call. The grant is
+  // idempotent, so calling it on every load is safe.
+  const { data: existing } = await supabase
     .from('credits')
     .select('balance')
     .eq('user_id', req.user.id)
-    .single();
-  if (error) return res.status(500).json({ error: 'Could not fetch credits' });
-  res.json({ balance: data.balance });
+    .maybeSingle();
+
+  if (existing) return res.json({ balance: existing.balance });
+
+  const trial = await grantTrialIfEligible(req.user);
+  // No row and not eligible (e.g. unverified email) -> report 0 rather than a 500,
+  // which is what used to happen to every brand-new user.
+  return res.json({
+    balance: trial.balance == null ? 0 : trial.balance,
+    trial_granted: trial.granted
+  });
 });
+
+// Explicit claim endpoint, for a client that wants to trigger/confirm the grant
+// directly (e.g. right after email verification) rather than wait for a balance read.
+app.post('/api/trial/claim', requireAuth, async (req, res) => {
+  const trial = await grantTrialIfEligible(req.user);
+  return res.json({
+    granted: trial.granted,
+    balance: trial.balance == null ? 0 : trial.balance,
+    reason: trial.reason,
+    trial_credits: TRIAL_CREDITS
+  });
+});
+
+// Grant the free trial exactly once per user. Safe to call on every dashboard load.
+//
+// Eligibility (fails CLOSED — if anything is uncertain we do not grant):
+//   • TRIAL_CREDITS > 0
+//   • the user's email is verified (Supabase email_confirmed_at / confirmed_at)
+//   • the user has NO credits row yet. Every paying user gets a row from the Stripe
+//     webhook, so this naturally excludes existing customers while still covering
+//     dormant sign-ups who never purchased.
+//
+// Idempotency has two layers: trial_granted_at on the row, and a UNIQUE constraint on
+// credits.user_id so two concurrent calls can never both insert (the loser's insert
+// errors and is swallowed). Returns { granted, balance, reason }.
+async function grantTrialIfEligible(user) {
+  if (!TRIAL_CREDITS || TRIAL_CREDITS <= 0) return { granted: false, balance: null, reason: 'trial_disabled' };
+  if (!user) return { granted: false, balance: null, reason: 'no_user' };
+
+  const verified = user.email_confirmed_at || user.confirmed_at;
+  if (!verified) return { granted: false, balance: null, reason: 'email_unverified' };
+
+  const { data: existing } = await supabase
+    .from('credits').select('balance, trial_granted_at').eq('user_id', user.id).maybeSingle();
+
+  if (existing) {
+    // Already has credits (purchased, or trial already granted) — never top up.
+    return {
+      granted: false,
+      balance: existing.balance,
+      reason: existing.trial_granted_at ? 'already_granted' : 'has_credits'
+    };
+  }
+
+  const { error } = await supabase
+    .from('credits')
+    .insert({ user_id: user.id, balance: TRIAL_CREDITS, trial_granted_at: new Date() });
+
+  if (error) {
+    // Almost always the unique-constraint race: another request granted it first.
+    const { data: now } = await supabase
+      .from('credits').select('balance').eq('user_id', user.id).maybeSingle();
+    return { granted: false, balance: now ? now.balance : null, reason: 'race_or_error' };
+  }
+
+  await supabase.from('credit_transactions').insert({
+    user_id: user.id, amount: TRIAL_CREDITS, type: 'trial', description: 'Free trial credits'
+  });
+  console.log('Trial granted:', user.id, TRIAL_CREDITS, 'credits');
+  return { granted: true, balance: TRIAL_CREDITS, reason: 'granted' };
+}
 
 async function deductCredits(userId, amount, type, description) {
   const { data: credits } = await supabase
