@@ -2304,13 +2304,24 @@ async function compositeLogoOnImage(baseUrl, placement, jobId, imageIndex) {
 }
 
 // Latest non-logo version url (the clean image), else a fallback.
-async function cleanBaseUrl(projectImageId, fallbackUrl) {
+async function cleanBaseUrl(projectImageId, fallbackUrl, activeVersionId) {
   const { data: versions } = await supabase
     .from('project_image_versions')
-    .select('url, source, seq')
+    .select('id, url, source, seq')
     .eq('project_image_id', projectImageId)
     .order('seq', { ascending: false });
-  const clean = (versions || []).find(function (v) { return v.source !== 'logo'; });
+  const list = versions || [];
+  // Resolve the clean base relative to the ACTIVE version (the one the user has
+  // stepped to in the history strip), NOT the newest in the chain — otherwise a logo
+  // always lands on the latest version regardless of what's being viewed. Walk back
+  // from the active version's seq past any logo versions, mirroring the client's
+  // cleanBaseClient. Falls back to newest-non-logo when no active version is given.
+  let startSeq = Infinity;
+  if (activeVersionId) {
+    const active = list.find(function (v) { return v.id === activeVersionId; });
+    if (active) startSeq = active.seq;
+  }
+  const clean = list.find(function (v) { return v.seq <= startSeq && v.source !== 'logo'; });
   return clean ? clean.url : fallbackUrl;
 }
 
@@ -2318,7 +2329,7 @@ async function cleanBaseUrl(projectImageId, fallbackUrl) {
 // base so re-positioning never stacks. Keeps a single source='logo' version.
 async function stampLogoOnImage(image, jobId, placement) {
   let base = image.logo_base_url;
-  if (!base) base = await cleanBaseUrl(image.id, image.current_url || image.enhanced_url);
+  if (!base) base = await cleanBaseUrl(image.id, image.current_url || image.enhanced_url, image.active_version_id);
   if (!base) return;
 
   const brandedUrl = await compositeLogoOnImage(base, placement, jobId || 'job', image.image_index);
@@ -2352,7 +2363,7 @@ async function stampLogoOnImage(image, jobId, placement) {
 async function removeLogoFromImage(image) {
   await supabase.from('project_image_versions')
     .delete().eq('project_image_id', image.id).eq('source', 'logo');
-  const base = image.logo_base_url || await cleanBaseUrl(image.id, image.current_url || image.enhanced_url);
+  const base = image.logo_base_url || await cleanBaseUrl(image.id, image.current_url || image.enhanced_url, image.active_version_id);
   const { data: remaining } = await supabase
     .from('project_image_versions').select('id, seq')
     .eq('project_image_id', image.id).order('seq', { ascending: false }).limit(1).maybeSingle();
@@ -2380,7 +2391,7 @@ app.post('/api/album/:id/logo', requireAuth, async (req, res) => {
     const jobByProj = {}; (projects || []).forEach(function (p) { jobByProj[p.id] = p.job_id; });
     if (projIds.length) {
       const { data: imgs } = await supabase.from('project_images')
-        .select('id, project_id, image_index, current_url, enhanced_url, logo_base_url, logo_placement')
+        .select('id, project_id, image_index, current_url, enhanced_url, active_version_id, logo_base_url, logo_placement')
         .in('project_id', projIds).is('deleted_at', null);
       const targets = (imgs || []).filter(function (im) { return !im.logo_placement; }); // overrides keep theirs
       await Promise.all(targets.map(function (im) { return stampLogoOnImage(im, jobByProj[im.project_id], full); }));
@@ -2400,7 +2411,7 @@ app.post('/api/image/:id/logo', requireAuth, async (req, res) => {
   try {
     const { data: image } = await supabase
       .from('project_images')
-      .select('id, project_id, image_index, current_url, enhanced_url, logo_base_url, projects!inner(user_id, job_id, album_id)')
+      .select('id, project_id, image_index, current_url, enhanced_url, active_version_id, logo_base_url, projects!inner(user_id, job_id, album_id)')
       .eq('id', id).maybeSingle();
     if (!image || !image.projects || image.projects.user_id !== req.user.id) return res.status(404).json({ error: 'Image not found' });
 
@@ -2437,7 +2448,7 @@ app.post('/api/album/:id/logo/remove', requireAuth, async (req, res) => {
     const projIds = (projects || []).map(function (p) { return p.id; });
     if (projIds.length) {
       const { data: imgs } = await supabase.from('project_images')
-        .select('id, current_url, enhanced_url, logo_base_url')
+        .select('id, current_url, enhanced_url, active_version_id, logo_base_url')
         .in('project_id', projIds).is('deleted_at', null);
       await Promise.all((imgs || []).map(function (im) { return removeLogoFromImage(im); }));
     }
