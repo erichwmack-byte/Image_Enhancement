@@ -2325,11 +2325,36 @@ async function cleanBaseUrl(projectImageId, fallbackUrl, activeVersionId) {
   return clean ? clean.url : fallbackUrl;
 }
 
-// Stamp (or re-stamp) the logo onto one image. Always composites from the clean
-// base so re-positioning never stacks. Keeps a single source='logo' version.
+// Decide which image the logo composites onto, using the ACTIVE version (persisted
+// by /api/version/set when the user steps through the in-card history):
+//   • active version IS the logo version  → the user is repositioning the existing
+//     logo, so reuse the stored logo_base_url and never drift to another version.
+//   • active version is a NON-logo version → the user stepped to a specific historical
+//     result and wants the logo THERE, so use that version's clean base (walking back
+//     past any logo version). stampLogoOnImage then refreshes logo_base_url to it.
+// This is why a stale logo_base_url no longer pins every apply to the newest image.
+async function resolveLogoBase(image) {
+  const { data: versions } = await supabase
+    .from('project_image_versions')
+    .select('id, url, source, seq')
+    .eq('project_image_id', image.id)
+    .order('seq', { ascending: false });
+  const list = versions || [];
+  const active = image.active_version_id
+    ? list.find(function (v) { return v.id === image.active_version_id; })
+    : null;
+  // Repositioning the logo that's currently showing: keep the base we applied to.
+  if (active && active.source === 'logo' && image.logo_base_url) return image.logo_base_url;
+  // Otherwise resolve the clean base at/under the active version.
+  const startSeq = active ? active.seq : Infinity;
+  const clean = list.find(function (v) { return v.seq <= startSeq && v.source !== 'logo'; });
+  return clean ? clean.url : (image.logo_base_url || image.current_url || image.enhanced_url);
+}
+
+// Stamp (or re-stamp) the logo onto one image. Composites from the resolved base
+// (see resolveLogoBase) and keeps a single source='logo' version.
 async function stampLogoOnImage(image, jobId, placement) {
-  let base = image.logo_base_url;
-  if (!base) base = await cleanBaseUrl(image.id, image.current_url || image.enhanced_url, image.active_version_id);
+  const base = await resolveLogoBase(image);
   if (!base) return;
 
   const brandedUrl = await compositeLogoOnImage(base, placement, jobId || 'job', image.image_index);
