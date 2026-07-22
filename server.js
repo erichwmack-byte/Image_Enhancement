@@ -2268,7 +2268,9 @@ function n(v) { const x = Number(v); return isFinite(x) ? x : 0; }
 
 // Deterministic overlay (NOT generative): stamp the logo PNG onto the base at a
 // fractional position/size/opacity. Respects the logo's own transparency.
-async function compositeLogoOnImage(baseUrl, placement, jobId, imageIndex) {
+// Render the logo onto a base image and return the JPEG BYTES. Pure pixels — no S3
+// write, no DB — so the same code serves on-the-fly export at download time.
+async function renderLogoBuffer(baseUrl, placement) {
   const [baseRes, logoRes] = await Promise.all([
     axios.get(baseUrl, { responseType: 'arraybuffer' }),
     axios.get(placement.logoUrl, { responseType: 'arraybuffer' })
@@ -2299,62 +2301,32 @@ async function compositeLogoOnImage(baseUrl, placement, jobId, imageIndex) {
     .composite([{ input: logoPng, top: top, left: left }])
     .jpeg({ quality: 95 })
     .toBuffer();
+  return out;
+}
+
+// Legacy helper: render + persist to S3. Retained for callers that need a stored URL.
+async function compositeLogoOnImage(baseUrl, placement, jobId, imageIndex) {
+  const out = await renderLogoBuffer(baseUrl, placement);
   const key = `${jobId}_logo_${imageIndex}_${Date.now()}.jpg`;
   return await uploadBufferToS3(out, key, 'image/jpeg');
 }
 
 // Latest non-logo version url (the clean image), else a fallback.
-async function cleanBaseUrl(projectImageId, fallbackUrl, activeVersionId) {
+async function cleanBaseUrl(projectImageId, fallbackUrl) {
   const { data: versions } = await supabase
     .from('project_image_versions')
-    .select('id, url, source, seq')
+    .select('url, source, seq')
     .eq('project_image_id', projectImageId)
     .order('seq', { ascending: false });
-  const list = versions || [];
-  // Resolve the clean base relative to the ACTIVE version (the one the user has
-  // stepped to in the history strip), NOT the newest in the chain — otherwise a logo
-  // always lands on the latest version regardless of what's being viewed. Walk back
-  // from the active version's seq past any logo versions, mirroring the client's
-  // cleanBaseClient. Falls back to newest-non-logo when no active version is given.
-  let startSeq = Infinity;
-  if (activeVersionId) {
-    const active = list.find(function (v) { return v.id === activeVersionId; });
-    if (active) startSeq = active.seq;
-  }
-  const clean = list.find(function (v) { return v.seq <= startSeq && v.source !== 'logo'; });
+  const clean = (versions || []).find(function (v) { return v.source !== 'logo'; });
   return clean ? clean.url : fallbackUrl;
 }
 
-// Decide which image the logo composites onto, using the ACTIVE version (persisted
-// by /api/version/set when the user steps through the in-card history):
-//   • active version IS the logo version  → the user is repositioning the existing
-//     logo, so reuse the stored logo_base_url and never drift to another version.
-//   • active version is a NON-logo version → the user stepped to a specific historical
-//     result and wants the logo THERE, so use that version's clean base (walking back
-//     past any logo version). stampLogoOnImage then refreshes logo_base_url to it.
-// This is why a stale logo_base_url no longer pins every apply to the newest image.
-async function resolveLogoBase(image) {
-  const { data: versions } = await supabase
-    .from('project_image_versions')
-    .select('id, url, source, seq')
-    .eq('project_image_id', image.id)
-    .order('seq', { ascending: false });
-  const list = versions || [];
-  const active = image.active_version_id
-    ? list.find(function (v) { return v.id === image.active_version_id; })
-    : null;
-  // Repositioning the logo that's currently showing: keep the base we applied to.
-  if (active && active.source === 'logo' && image.logo_base_url) return image.logo_base_url;
-  // Otherwise resolve the clean base at/under the active version.
-  const startSeq = active ? active.seq : Infinity;
-  const clean = list.find(function (v) { return v.seq <= startSeq && v.source !== 'logo'; });
-  return clean ? clean.url : (image.logo_base_url || image.current_url || image.enhanced_url);
-}
-
-// Stamp (or re-stamp) the logo onto one image. Composites from the resolved base
-// (see resolveLogoBase) and keeps a single source='logo' version.
+// Stamp (or re-stamp) the logo onto one image. Always composites from the clean
+// base so re-positioning never stacks. Keeps a single source='logo' version.
 async function stampLogoOnImage(image, jobId, placement) {
-  const base = await resolveLogoBase(image);
+  let base = image.logo_base_url;
+  if (!base) base = await cleanBaseUrl(image.id, image.current_url || image.enhanced_url);
   if (!base) return;
 
   const brandedUrl = await compositeLogoOnImage(base, placement, jobId || 'job', image.image_index);
@@ -2388,7 +2360,7 @@ async function stampLogoOnImage(image, jobId, placement) {
 async function removeLogoFromImage(image) {
   await supabase.from('project_image_versions')
     .delete().eq('project_image_id', image.id).eq('source', 'logo');
-  const base = image.logo_base_url || await cleanBaseUrl(image.id, image.current_url || image.enhanced_url, image.active_version_id);
+  const base = image.logo_base_url || await cleanBaseUrl(image.id, image.current_url || image.enhanced_url);
   const { data: remaining } = await supabase
     .from('project_image_versions').select('id, seq')
     .eq('project_image_id', image.id).order('seq', { ascending: false }).limit(1).maybeSingle();
@@ -2409,18 +2381,11 @@ app.post('/api/album/:id/logo', requireAuth, async (req, res) => {
     if (!logo || logo.user_id !== req.user.id) return res.status(404).json({ error: 'Logo not found' });
 
     const full = { logoUrl: logo.image_url, x: n(placement.x), y: n(placement.y), w: n(placement.w), opacity: placement.opacity == null ? 1 : n(placement.opacity) };
+    // EXPORT-ONLY WATERMARK: the album default is just a stored placement. Every image
+    // in the album inherits it at export time unless it has its own logo_placement
+    // override. No stamping loop, so applying an album logo no longer rewrites any
+    // image's history or current_url.
     await supabase.from('albums').update({ logo_placement: full }).eq('id', id);
-
-    const { data: projects } = await supabase.from('projects').select('id, job_id').eq('album_id', id);
-    const projIds = (projects || []).map(function (p) { return p.id; });
-    const jobByProj = {}; (projects || []).forEach(function (p) { jobByProj[p.id] = p.job_id; });
-    if (projIds.length) {
-      const { data: imgs } = await supabase.from('project_images')
-        .select('id, project_id, image_index, current_url, enhanced_url, active_version_id, logo_base_url, logo_placement')
-        .in('project_id', projIds).is('deleted_at', null);
-      const targets = (imgs || []).filter(function (im) { return !im.logo_placement; }); // overrides keep theirs
-      await Promise.all(targets.map(function (im) { return stampLogoOnImage(im, jobByProj[im.project_id], full); }));
-    }
     return res.status(200).json({ ok: true });
   } catch (e) {
     console.error('album logo error:', e.message);
@@ -2436,7 +2401,7 @@ app.post('/api/image/:id/logo', requireAuth, async (req, res) => {
   try {
     const { data: image } = await supabase
       .from('project_images')
-      .select('id, project_id, image_index, current_url, enhanced_url, active_version_id, logo_base_url, projects!inner(user_id, job_id, album_id)')
+      .select('id, project_id, image_index, current_url, enhanced_url, logo_base_url, projects!inner(user_id, job_id, album_id)')
       .eq('id', id).maybeSingle();
     if (!image || !image.projects || image.projects.user_id !== req.user.id) return res.status(404).json({ error: 'Image not found' });
 
@@ -2452,8 +2417,12 @@ app.post('/api/image/:id/logo', requireAuth, async (req, res) => {
     }
 
     const full = { logoUrl: logoUrl, x: n(placement.x), y: n(placement.y), w: n(placement.w), opacity: placement.opacity == null ? 1 : n(placement.opacity) };
+    // EXPORT-ONLY WATERMARK: store the placement and stop. We do NOT composite here,
+    // do NOT create a source='logo' version, and do NOT touch current_url /
+    // active_version_id. The logo is applied on the fly at download/share time
+    // (/api/image/:id/export) over whatever version is active then. This is what
+    // keeps the history chain purely real results and makes the logo version-agnostic.
     await supabase.from('project_images').update({ logo_placement: full }).eq('id', id);
-    await stampLogoOnImage(image, image.projects.job_id, full);
     return res.status(200).json({ ok: true });
   } catch (e) {
     console.error('image logo error:', e.message);
@@ -2469,18 +2438,119 @@ app.post('/api/album/:id/logo/remove', requireAuth, async (req, res) => {
     if (!album || album.user_id !== req.user.id) return res.status(404).json({ error: 'Album not found' });
     await supabase.from('albums').update({ logo_placement: null }).eq('id', id);
 
+    // EXPORT-ONLY WATERMARK: removing is just clearing stored placements — there are
+    // no baked-in logo versions to unwind. Clear per-image overrides too so "remove
+    // logo" means the whole album exports clean.
     const { data: projects } = await supabase.from('projects').select('id').eq('album_id', id);
     const projIds = (projects || []).map(function (p) { return p.id; });
     if (projIds.length) {
-      const { data: imgs } = await supabase.from('project_images')
-        .select('id, current_url, enhanced_url, active_version_id, logo_base_url')
+      await supabase.from('project_images')
+        .update({ logo_placement: null })
         .in('project_id', projIds).is('deleted_at', null);
-      await Promise.all((imgs || []).map(function (im) { return removeLogoFromImage(im); }));
     }
     return res.status(200).json({ ok: true });
   } catch (e) {
     console.error('album logo remove error:', e.message);
     return res.status(500).json({ error: 'Could not remove logo' });
+  }
+});
+
+// ── Logo: clear a single image's override placement ──────────────────────────
+app.post('/api/image/:id/logo/remove', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { data: image } = await supabase
+      .from('project_images')
+      .select('id, projects!inner(user_id)')
+      .eq('id', id).maybeSingle();
+    if (!image || !image.projects || image.projects.user_id !== req.user.id) return res.status(404).json({ error: 'Image not found' });
+    await supabase.from('project_images').update({ logo_placement: null }).eq('id', id);
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error('image logo remove error:', e.message);
+    return res.status(500).json({ error: 'Could not remove logo' });
+  }
+});
+
+// ── Export: the ACTIVE version with the watermark applied on the fly ──────────
+// Returns JPEG BYTES (not a URL). The logo is composited at request time over
+// whichever version is currently active, using the image's own placement or the
+// album default. No placement -> the untouched active image is returned. Because
+// this streams from our own origin, downloads are not subject to the S3 CORS
+// limitation that forced the open-in-a-tab fallback.
+app.post('/api/image/:id/export', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { data: image } = await supabase
+      .from('project_images')
+      .select('id, image_index, current_url, enhanced_url, logo_placement, projects!inner(user_id, album_id)')
+      .eq('id', id).maybeSingle();
+    if (!image || !image.projects || image.projects.user_id !== req.user.id) return res.status(404).json({ error: 'Image not found' });
+
+    const baseUrl = image.current_url || image.enhanced_url;
+    if (!baseUrl) return res.status(404).json({ error: 'No image to export' });
+
+    // Per-image override wins; otherwise inherit the album default.
+    let placement = image.logo_placement;
+    if (!placement && image.projects.album_id) {
+      const { data: album } = await supabase
+        .from('albums').select('logo_placement').eq('id', image.projects.album_id).maybeSingle();
+      placement = album ? album.logo_placement : null;
+    }
+
+    let buf;
+    if (placement && placement.logoUrl) {
+      buf = await renderLogoBuffer(baseUrl, placement);
+    } else {
+      const r = await axios.get(baseUrl, { responseType: 'arraybuffer' });
+      buf = Buffer.from(r.data);
+    }
+
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).send(buf);
+  } catch (e) {
+    console.error('image export error:', e.message);
+    return res.status(500).json({ error: 'Could not export image' });
+  }
+});
+
+// ── Maintenance: unwind legacy baked-in logo versions (one-time, idempotent) ──
+// Pre-export-watermark, applying a logo wrote a source='logo' version and pointed
+// current_url/active_version_id at it. This removes those versions and restores each
+// image to its newest real result. logo_placement is KEPT, so the same logo simply
+// applies at export instead. Safe to run repeatedly; only touches source='logo' rows.
+app.post('/api/maintenance/unstamp-logos', async (req, res) => {
+  if (req.headers['x-callback-secret'] !== CALLBACK_SECRET) {
+    return res.status(403).json({ error: 'Invalid callback secret' });
+  }
+  try {
+    const { data: rows } = await supabase
+      .from('project_image_versions').select('project_image_id').eq('source', 'logo');
+    const ids = Array.from(new Set((rows || []).map(function (r) { return r.project_image_id; })));
+    let fixed = 0;
+    for (const imageId of ids) {
+      const { data: vs } = await supabase
+        .from('project_image_versions').select('id, url, source, seq')
+        .eq('project_image_id', imageId).order('seq', { ascending: false });
+      const clean = (vs || []).find(function (v) { return v.source !== 'logo'; });
+      const { data: im } = await supabase
+        .from('project_images').select('id, enhanced_url').eq('id', imageId).maybeSingle();
+      // Point the image away from the logo version FIRST — project_images
+      // .active_version_id has a foreign key onto the versions table.
+      await supabase.from('project_images').update({
+        current_url: clean ? clean.url : (im ? im.enhanced_url : null),
+        active_version_id: clean ? clean.id : null,
+        logo_base_url: null
+      }).eq('id', imageId);
+      await supabase.from('project_image_versions')
+        .delete().eq('project_image_id', imageId).eq('source', 'logo');
+      fixed++;
+    }
+    return res.status(200).json({ ok: true, images_unstamped: fixed });
+  } catch (e) {
+    console.error('unstamp-logos error:', e.message);
+    return res.status(500).json({ error: 'Unstamp failed' });
   }
 });
 
