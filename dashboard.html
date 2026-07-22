@@ -70,6 +70,22 @@
     font-size:13.5px;font-weight:600;
   }
   .credits b{color:var(--yellow)}
+  .trial-badge{
+    display:inline-block;margin-left:8px;padding:3px 9px;border-radius:999px;
+    font-size:11.5px;font-weight:600;letter-spacing:.2px;
+    background:rgba(255,255,255,.08);color:var(--text-muted);
+    border:1px solid rgba(255,255,255,.14);white-space:nowrap;cursor:default
+  }
+  .low-credit-bar{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    margin:0 0 16px;padding:11px 14px;border-radius:12px;
+    background:rgba(255,196,0,.10);border:1px solid rgba(255,196,0,.30);
+    font-size:13.5px;color:var(--text)
+  }
+  .low-credit-bar .lc-x{
+    margin-left:auto;background:none;border:0;color:var(--text-muted);
+    font-size:16px;line-height:1;cursor:pointer;padding:2px 6px
+  }
   .ghost-btn{
     padding:8px 15px;border-radius:999px;font-size:13.5px;font-weight:600;
     background:var(--surface);border:1px solid var(--hairline);
@@ -440,6 +456,7 @@
     <a class="brand" href="/"><span class="dot"></span>Studio<small>&nbsp;/ Albums</small></a>
     <span class="spacer"></span>
     <span class="credits">⚡ <b id="creditCount">—</b> credits</span>
+    <span class="trial-badge" id="trialBadge" hidden></span>
     <a class="ghost-btn" href="/">＋ New design</a>
     <button class="ghost-btn" id="libraryBtn">Library</button>
     <button class="ghost-btn" id="trashBtn">🗑 Trash</button>
@@ -449,6 +466,11 @@
   <main class="wrap">
     <!-- Albums view -->
     <section id="albumsView">
+      <div class="low-credit-bar" id="lowCreditBar" hidden>
+        <span id="lowCreditText"></span>
+        <button class="btn primary" onclick="goBuyCredits()">Buy credits</button>
+        <button class="lc-x" id="lowCreditX" aria-label="Dismiss">✕</button>
+      </div>
       <div class="lib-banner" id="libBanner" hidden>
         <div class="lib-banner-txt"><b>Build your brand Library.</b> Upload your <b>logos</b> and <b>material swatches</b> once — open the <b>Library</b> chip up top to reuse them across every album.</div>
         <div class="lib-banner-actions">
@@ -554,8 +576,8 @@
 
   <div class="credit-modal" id="creditModal">
     <div class="credit-box">
-      <h3>You're out of credits</h3>
-      <p>This action needs credits you don't have right now. Top up to keep refining, inpainting, upscaling, and animating.</p>
+      <h3 id="creditTitle">You're out of credits</h3>
+      <p id="creditBody">This action needs credits you don't have right now. Top up to keep refining, inpainting, upscaling, and animating.</p>
       <div class="btn-row">
         <button class="btn primary" onclick="goBuyCredits()">Buy credits</button>
         <button class="btn" onclick="closeCreditModal()">Maybe later</button>
@@ -673,7 +695,15 @@ function toast(msg,isErr){
   clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),3200);
 }
 
-function openCreditModal(){ const m=$('#creditModal'); if(m) m.classList.add('open'); }
+function openCreditModal(msg){
+  const m=$('#creditModal'); if(!m) return;
+  const h=$('#creditTitle'), p=$('#creditBody');
+  if(h&&p){
+    if(msg){ h.textContent='Upgrade to unlock this'; p.textContent=msg; }
+    else{ h.textContent="You're out of credits"; p.textContent="This action needs credits you don't have right now. Top up to keep refining, inpainting, upscaling, and animating."; }
+  }
+  m.classList.add('open');
+}
 function closeCreditModal(){ const m=$('#creditModal'); if(m) m.classList.remove('open'); }
 function goBuyCredits(){ location.href='/?buy=1'; }
 
@@ -684,7 +714,13 @@ async function api(path,opts){
   const res=await fetch(path,{method:opts.method||'GET',headers,body:opts.body?JSON.stringify(opts.body):undefined});
   if(res.status===401){location.replace('/');throw new Error('unauthorized');}
   let data=null; try{data=await res.json();}catch(e){}
-  if(res.status===402){ openCreditModal(); const err=new Error((data&&data.error)||'Insufficient credits'); err.code='INSUFFICIENT_CREDITS'; throw err; }
+  if(res.status===402){
+    // Two different 402s: genuinely out of credits, vs a premium action that the free
+    // trial doesn't include. Showing "You're out of credits" for the latter is wrong.
+    if(data&&data.code==='trial_excluded') openCreditModal(data.error);
+    else openCreditModal();
+    const err=new Error((data&&data.error)||'Insufficient credits'); err.code='INSUFFICIENT_CREDITS'; throw err;
+  }
   if(!res.ok) throw new Error((data&&data.error)||('Request failed ('+res.status+')'));
   return data;
 }
@@ -695,9 +731,41 @@ let current={jobId:null,projectId:null,name:'',images:[]};
 const imgState={}; // projectImageId -> image object
 
 /* ── Credits ── */
+/* Trial users get a badge with days remaining, plus a one-per-session nudge once the
+   balance runs low. The nudge is deliberately non-blocking — the blocking modal is
+   reserved for an action that actually failed. */
+let CREDIT_STATE={balance:null,trialOnly:false,expiresAt:null,low:10};
 async function loadCredits(){
-  try{const d=await api('/api/credits'); $('#creditCount').textContent=(d.balance!=null?d.balance:(d.credits!=null?d.credits:'—'));}
-  catch(e){}
+  try{
+    const d=await api('/api/credits');
+    const bal=(d.balance!=null?d.balance:(d.credits!=null?d.credits:null));
+    CREDIT_STATE={balance:bal,trialOnly:!!d.trial_only,expiresAt:d.trial_expires_at||null,low:(d.low_threshold!=null?d.low_threshold:10)};
+    $('#creditCount').textContent=(bal!=null?bal:'—');
+    renderTrialBadge();
+    maybeNudgeLowCredits();
+  }catch(e){}
+}
+function renderTrialBadge(){
+  const host=$('#trialBadge'); if(!host) return;
+  if(!CREDIT_STATE.trialOnly){ host.hidden=true; host.textContent=''; return; }
+  let txt='Free trial';
+  if(CREDIT_STATE.expiresAt){
+    const days=Math.ceil((new Date(CREDIT_STATE.expiresAt)-new Date())/86400000);
+    txt = days>1 ? ('Free trial · '+days+' days left') : (days===1?'Free trial · last day':'Trial expired');
+  }
+  host.textContent=txt; host.hidden=false;
+  host.title='Trial downloads include a small StudioFinish mark. Buying credits removes it.';
+}
+function maybeNudgeLowCredits(){
+  const b=CREDIT_STATE.balance;
+  if(b==null||b>CREDIT_STATE.low||b<0) return;
+  if(sessionStorage.getItem('lowCreditNudged')) return;
+  sessionStorage.setItem('lowCreditNudged','1');
+  const bar=$('#lowCreditBar'); if(!bar) return;
+  $('#lowCreditText').textContent = b===0
+    ? "You're out of credits. Top up to keep editing."
+    : ('Only '+b+' credit'+(b===1?'':'s')+' left'+(CREDIT_STATE.trialOnly?' in your free trial':'')+'.');
+  bar.hidden=false;
 }
 
 /* ── Albums ── */
@@ -1740,8 +1808,7 @@ $('#libraryBtn').addEventListener('click',openLibrary);
 })();
 /* "build your Library" banner — dismissible, remembered per browser */
 (function(){
-  const b=$('#libBanner'); if(!b) return;
-  if(localStorage.getItem('libBannerDismissed')!=='1') b.hidden=false;
+  const b=$('#libBanner'); if(!b) return;  if(localStorage.getItem('libBannerDismissed')!=='1') b.hidden=false;
   const open=$('#libBannerOpen'); if(open) open.addEventListener('click',openLibrary);
   const x=$('#libBannerX'); if(x) x.addEventListener('click',function(){
     b.hidden=true; localStorage.setItem('libBannerDismissed','1');
@@ -1927,6 +1994,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape')$('#lightbox').clas
 $('#signOut').addEventListener('click',()=>{ localStorage.removeItem('authToken'); location.replace('/'); });
 
 /* ── Boot ── */
+const _lcx=document.getElementById('lowCreditX'); if(_lcx) _lcx.addEventListener('click',()=>{ const b=document.getElementById('lowCreditBar'); if(b) b.hidden=true; });
 loadCredits();
 loadAlbums();
 const _autoAlbum=new URLSearchParams(location.search).get('album');
