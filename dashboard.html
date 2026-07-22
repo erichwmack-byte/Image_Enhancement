@@ -634,6 +634,13 @@
         <span>Logo — drag to position, drag the corner to resize</span>
         <button class="ip-close" id="lgClose" aria-label="Close">✕</button>
       </div>
+      <p class="tool-hint" style="margin:0 0 10px">
+        The logo is <b>not baked into your image</b>. You are saving a position, size and
+        opacity — the logo is added to the file automatically when you download it, and it
+        always lands on whichever version you are currently viewing in the history.
+        Your saved results stay clean and unbranded, so you can keep editing at any time.
+        <span class="eg">Apply to this image = just this one · Set as album default = every image in the album that doesn't have its own · Remove logo = clears both.</span>
+      </p>
       <div class="ip-stage" id="lgStage">
         <img id="lgImg" alt="">
         <div class="lg-box" id="lgBox"><img id="lgBoxImg" alt=""><span class="lg-resize" id="lgResize"></span></div>
@@ -641,7 +648,7 @@
       <div class="lg-pickrow" id="lgPick"></div>
       <div class="ip-tools">
         <label class="ip-size">Opacity <input type="range" id="lgOpacity" min="10" max="100" value="100"></label>
-        <span class="ip-hint">Transparent PNG works best. Apply to the whole album or just this image.</span>
+        <span class="ip-hint">Transparent PNG works best. Applied on download — nothing is written to your saved image.</span>
       </div>
       <div class="ip-actions">
         <button class="btn" id="lgRemove">Remove logo</button>
@@ -848,7 +855,7 @@ function buildCard(img){
         '<button class="btn wide" data-inpaint>✎ Inpaint a specific area</button>'+
       '</div>'+
       '<div class="tool-group">'+
-        '<p class="tool-hint"><b>Logo</b> — overlay one of your saved brand logos or watermarks and position it on the image.</p>'+
+        '<p class="tool-hint"><b>Logo</b> — position one of your saved brand logos or watermarks. It is not baked into the image: it stays a saved placement and is added automatically when you download, always over whichever version you are viewing.</p>'+
         '<button class="btn wide" data-logo>🏷 Add logo / watermark</button>'+
       '</div>'+
       '<div class="btn-row share-row">'+
@@ -871,7 +878,7 @@ function buildCard(img){
   card.querySelector('[data-upscale]').addEventListener('click',e=>upscale(card,img,e.currentTarget));
   card.querySelector('[data-inpaint]').addEventListener('click',()=>openInpaintModal(card,img));
   card.querySelector('[data-logo]').addEventListener('click',()=>openLogoModal(card,img));
-  card.querySelector('[data-download]').addEventListener('click',()=>download(card.querySelector('[data-main]').src,'design-'+num+'.jpg'));
+  card.querySelector('[data-download]').addEventListener('click',()=>download(img.projectImageId,'design-'+num+'.jpg',card.querySelector('[data-main]').src));
   card.querySelector('[data-pin]').addEventListener('click',()=>window.open('https://pinterest.com/pin/create/button/?media='+encodeURIComponent(card.querySelector('[data-main]').src),'_blank'));
   card.querySelector('[data-fb]').addEventListener('click',()=>window.open('https://www.facebook.com/sharer/sharer.php?u='+encodeURIComponent(card.querySelector('[data-main]').src),'_blank'));
   card.querySelector('[data-animate]').addEventListener('click',e=>animate(card,img,e.currentTarget));
@@ -1207,13 +1214,23 @@ async function animate(card,img,btn){
 }
 
 /* ── Download (blob, to force save of cross-origin S3) ── */
-async function download(url,name){
+/* Downloads go through /api/image/:id/export, which composites the saved logo
+   placement onto the ACTIVE version at request time and streams the bytes from our
+   own origin (so S3 CORS can't block the save). No placement = the plain image. */
+async function download(projectImageId,name,fallbackUrl){
   try{
-    const r=await fetch(url); const b=await r.blob(); const u=URL.createObjectURL(b);
+    const res=await fetch('/api/image/'+encodeURIComponent(projectImageId)+'/export',
+      {method:'POST',headers:{'Authorization':'Bearer '+TOKEN}});
+    if(res.status===401){ location.replace('/'); return; }
+    if(!res.ok) throw new Error('Export failed');
+    const b=await res.blob(); const u=URL.createObjectURL(b);
     const a=el('a'); a.href=u; a.download=name||'image.jpg'; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(u),1500);
     toast('Saved to your Downloads');
-  }catch(e){ window.open(url,'_blank'); toast('Opened in a new tab — right-click to save',true); }
+  }catch(e){
+    if(fallbackUrl){ window.open(fallbackUrl,'_blank'); toast('Opened in a new tab — right-click to save',true); }
+    else toast('Download failed',true);
+  }
 }
 
 /* ── Inpaint (roomy modal mask editor → Path A + server-side composite) ──
@@ -1879,13 +1896,13 @@ async function lgApply(scope){
   try{
     if(scope==='all') await api('/api/album/'+encodeURIComponent(current.albumId)+'/logo',{method:'POST',body:{logoId:lgState.logoId,placement:p}});
     else await api('/api/image/'+encodeURIComponent(img.projectImageId)+'/logo',{method:'POST',body:{logoId:lgState.logoId,placement:p}});
-    closeLogoModal(); toast(scope==='all'?'Logo applied to album':'Logo applied to this image');
+    closeLogoModal(); toast(scope==='all'?'Album logo saved — added to downloads':'Logo saved — added when you download');
     openAlbum({albumId:current.albumId,name:current.name});
   }catch(e){ toast(e.message,true); }
   finally{ a.disabled=o.disabled=false; a.textContent='Set as album default'; }
 }
 async function lgRemove(){
-  if(!confirm('Remove the logo from every image in this album?')) return;
+  if(!confirm('Remove the logo from this album? Downloads will no longer include it.')) return;
   try{
     await api('/api/album/'+encodeURIComponent(current.albumId)+'/logo/remove',{method:'POST'});
     closeLogoModal(); toast('Logo removed'); openAlbum({albumId:current.albumId,name:current.name});
