@@ -23,6 +23,49 @@ const CALLBACK_SECRET = 'sf_upscale_callback_2024';
 // grantTrialIfEligible. 1 credit = one enhance/refine/inpaint/upscale.
 const TRIAL_CREDITS = Number(process.env.TRIAL_CREDITS || 50);
 
+// Max trials granted per originating IP per rolling 24h. Blunt but effective against
+// the cheap attack (script signs up N throwaway accounts from one box).
+const TRIAL_MAX_PER_IP_PER_DAY = Number(process.env.TRIAL_MAX_PER_IP_PER_DAY || 3);
+
+// Disposable / throwaway email providers. Blocked at signup and again at grant time.
+// Extend without a deploy via EXTRA_BLOCKED_EMAIL_DOMAINS (comma-separated).
+const DISPOSABLE_EMAIL_DOMAINS = new Set([
+  'mailinator.com', 'guerrillamail.com', 'guerrillamail.net', 'sharklasers.com',
+  '10minutemail.com', '10minutemail.net', 'tempmail.com', 'temp-mail.org',
+  'yopmail.com', 'yopmail.net', 'throwawaymail.com', 'trashmail.com', 'trashmail.de',
+  'getnada.com', 'nada.email', 'dispostable.com', 'maildrop.cc', 'fakeinbox.com',
+  'mailnesia.com', 'moakt.com', 'emailondeck.com', 'spamgourmet.com', 'mintemail.com',
+  'tempr.email', 'discard.email', 'mailcatch.com', 'mytemp.email', 'inboxbear.com',
+  'burnermail.io', 'einrot.com', 'fakemail.net', 'tempinbox.com', 'mohmal.com',
+  'anonaddy.me', 'mailtemp.net', 'tmpmail.org', 'luxusmail.org'
+].concat(
+  (process.env.EXTRA_BLOCKED_EMAIL_DOMAINS || '')
+    .split(',').map(function (s) { return s.trim().toLowerCase(); }).filter(Boolean)
+));
+
+// Suffix families that spawn endless subdomains (a.temp-mail.org, b.temp-mail.org…).
+const DISPOSABLE_EMAIL_SUFFIXES = ['.temp-mail.org', '.yopmail.com', '.mailinator.com'];
+
+function isDisposableEmail(email) {
+  const at = String(email || '').lastIndexOf('@');
+  if (at < 0) return false;
+  const domain = String(email).slice(at + 1).toLowerCase().trim();
+  if (!domain) return false;
+  if (DISPOSABLE_EMAIL_DOMAINS.has(domain)) return true;
+  return DISPOSABLE_EMAIL_SUFFIXES.some(function (s) { return domain.endsWith(s); });
+}
+
+// Railway terminates TLS at a proxy, so req.ip is the proxy. Take the first hop of
+// x-forwarded-for (the real client) and fall back to the socket address.
+function clientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  if (fwd) {
+    const first = String(fwd).split(',')[0].trim();
+    if (first) return first;
+  }
+  return (req.socket && req.socket.remoteAddress) || req.ip || null;
+}
+
 // §8E SAM3 smart-select (Replicate hosted SAM3, mattsays/sam3-image). Token is
 // server-side only — never shipped to the browser; set REPLICATE_API_TOKEN in the
 // Railway env. SAM3-image takes ONE text prompt per prediction, so /api/segment
@@ -117,6 +160,10 @@ function generateJobId() {
 // ── Auth Routes ───────────────────────────────────────────────────────────────
 app.post('/auth/signup', async (req, res) => {
   const { email, password } = req.body;
+  // Cheapest possible abuse control: throwaway inboxes never reach the trial grant.
+  if (isDisposableEmail(email)) {
+    return res.status(400).json({ error: 'Please sign up with a permanent email address.' });
+  }
   const { data, error } = await supabase.auth.signUp({ email, password });
   if (error) return res.status(400).json({ error: error.message });
   res.json({ user: data.user, session: data.session });
@@ -169,9 +216,14 @@ app.get('/api/credits', requireAuth, async (req, res) => {
     .eq('user_id', req.user.id)
     .maybeSingle();
 
-  if (existing) return res.json({ balance: existing.balance });
+  if (existing) {
+    return res.json({
+      balance: existing.balance,
+      trial_only: await isTrialOnly(req.user.id)
+    });
+  }
 
-  const trial = await grantTrialIfEligible(req.user);
+  const trial = await grantTrialIfEligible(req.user, req);
   // No row and not eligible (e.g. unverified email) -> report 0 rather than a 500,
   // which is what used to happen to every brand-new user.
   return res.json({
@@ -183,7 +235,7 @@ app.get('/api/credits', requireAuth, async (req, res) => {
 // Explicit claim endpoint, for a client that wants to trigger/confirm the grant
 // directly (e.g. right after email verification) rather than wait for a balance read.
 app.post('/api/trial/claim', requireAuth, async (req, res) => {
-  const trial = await grantTrialIfEligible(req.user);
+  const trial = await grantTrialIfEligible(req.user, req);
   return res.json({
     granted: trial.granted,
     balance: trial.balance == null ? 0 : trial.balance,
@@ -204,12 +256,18 @@ app.post('/api/trial/claim', requireAuth, async (req, res) => {
 // Idempotency has two layers: trial_granted_at on the row, and a UNIQUE constraint on
 // credits.user_id so two concurrent calls can never both insert (the loser's insert
 // errors and is swallowed). Returns { granted, balance, reason }.
-async function grantTrialIfEligible(user) {
+async function grantTrialIfEligible(user, req) {
   if (!TRIAL_CREDITS || TRIAL_CREDITS <= 0) return { granted: false, balance: null, reason: 'trial_disabled' };
   if (!user) return { granted: false, balance: null, reason: 'no_user' };
 
   const verified = user.email_confirmed_at || user.confirmed_at;
   if (!verified) return { granted: false, balance: null, reason: 'email_unverified' };
+
+  // Defense in depth: signup already rejects these, but an account could predate the
+  // blocklist or have been created another way.
+  if (isDisposableEmail(user.email)) {
+    return { granted: false, balance: null, reason: 'disposable_email' };
+  }
 
   const { data: existing } = await supabase
     .from('credits').select('balance, trial_granted_at').eq('user_id', user.id).maybeSingle();
@@ -223,6 +281,21 @@ async function grantTrialIfEligible(user) {
     };
   }
 
+  // Per-IP cap over a rolling 24h window. Unknown IP skips the check rather than
+  // blocking a legitimate user (the verified-email gate still applies).
+  const ip = req ? clientIp(req) : null;
+  if (ip && TRIAL_MAX_PER_IP_PER_DAY > 0) {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count } = await supabase
+      .from('trial_grant_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('ip', ip).gte('created_at', since);
+    if ((count || 0) >= TRIAL_MAX_PER_IP_PER_DAY) {
+      console.warn('Trial blocked (IP cap):', ip, user.id);
+      return { granted: false, balance: null, reason: 'ip_rate_limited' };
+    }
+  }
+
   const { error } = await supabase
     .from('credits')
     .insert({ user_id: user.id, balance: TRIAL_CREDITS, trial_granted_at: new Date() });
@@ -234,11 +307,26 @@ async function grantTrialIfEligible(user) {
     return { granted: false, balance: now ? now.balance : null, reason: 'race_or_error' };
   }
 
+  // Log AFTER the successful insert so blocked/failed attempts don't burn the IP quota.
+  await supabase.from('trial_grant_log').insert({ user_id: user.id, ip: ip, email: user.email });
+
   await supabase.from('credit_transactions').insert({
     user_id: user.id, amount: TRIAL_CREDITS, type: 'trial', description: 'Free trial credits'
   });
-  console.log('Trial granted:', user.id, TRIAL_CREDITS, 'credits');
+  console.log('Trial granted:', user.id, TRIAL_CREDITS, 'credits, ip:', ip);
   return { granted: true, balance: TRIAL_CREDITS, reason: 'granted' };
+}
+
+// True when the user is running purely on trial credits — trial was granted and they
+// have never made a purchase. Used to gate premium actions out of the trial.
+async function isTrialOnly(userId) {
+  const { data: c } = await supabase
+    .from('credits').select('trial_granted_at').eq('user_id', userId).maybeSingle();
+  if (!c || !c.trial_granted_at) return false;
+  const { data: purchase } = await supabase
+    .from('credit_transactions').select('id')
+    .eq('user_id', userId).eq('type', 'purchase').limit(1).maybeSingle();
+  return !purchase;
 }
 
 async function deductCredits(userId, amount, type, description) {
@@ -510,6 +598,18 @@ app.post('/api/enhance', requireAuth, upload.array('images'), async (req, res) =
 
 // ── Animate Proxy (with credit check) ────────────────────────────────────────
 app.post('/api/animate', requireAuth, async (req, res) => {
+  // Animation is excluded from the free trial: 8 credits ≈ a $2 Veo clip, which is far
+  // too much hard cost to hand to an unconverted signup, and video isn't what sells the
+  // product. Checked BEFORE deducting so trial users are never charged for a refusal,
+  // and returns a distinct code so the client can show an upgrade prompt rather than a
+  // generic "insufficient credits".
+  if (await isTrialOnly(req.user.id)) {
+    return res.status(402).json({
+      error: 'Animation isn\'t included in the free trial. Add credits to unlock it.',
+      code: 'trial_excluded'
+    });
+  }
+
   const deducted = await deductCredits(
     req.user.id,
     CREDIT_COSTS.animate,
