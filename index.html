@@ -691,6 +691,29 @@
     .step-body { font-size: 12px; color: var(--text-muted); line-height: 1.55; }
 
     /* ── AUTH PANEL ── */
+    .promo-banner {
+      background: var(--aqua-dim);
+      border: 1px solid var(--border-aqua, rgba(0,194,199,0.35));
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 22px;
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    .promo-banner .promo-headline {
+      color: var(--aqua);
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+
+    .promo-banner .promo-sub {
+      color: var(--text-muted);
+      font-size: 12.5px;
+      margin-top: 3px;
+    }
+
     #auth-panel {
       background: var(--bg-card);
       border: 1px solid var(--border);
@@ -1408,6 +1431,10 @@
 
   <!-- Auth Panel -->
   <div id="auth-panel">
+    <div class="promo-banner">
+      <div class="promo-headline">🎁 50 FREE Enhancements</div>
+      <div class="promo-sub">when you create your account — no credit card required</div>
+    </div>
     <div class="auth-header">
       <h2>Welcome Back</h2>
       <p>Sign in to access your StudioFinish workspace</p>
