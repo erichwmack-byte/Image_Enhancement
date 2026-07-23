@@ -35,6 +35,11 @@ const TRIAL_DAYS = Number(process.env.TRIAL_DAYS || 14);
 // Balance at or below which the dashboard nudges the user to top up.
 const LOW_CREDIT_THRESHOLD = Number(process.env.LOW_CREDIT_THRESHOLD || 10);
 
+// Transparent PNG composited onto trial users' downloads. UNSET = no trial mark at all
+// (the feature is off), which is the safe default — see applyTrialMark for why this is
+// an image rather than rendered text.
+const TRIAL_MARK_URL = process.env.TRIAL_MARK_URL || '';
+
 // Disposable / throwaway email providers. Blocked at signup and again at grant time.
 // Extend without a deploy via EXTRA_BLOCKED_EMAIL_DOMAINS (comma-separated).
 const DISPOSABLE_EMAIL_DOMAINS = new Set([
@@ -2529,26 +2534,38 @@ function n(v) { const x = Number(v); return isFinite(x) ? x : 0; }
 // Deterministic overlay (NOT generative): stamp the logo PNG onto the base at a
 // fractional position/size/opacity. Respects the logo's own transparency.
 // Trial watermark. Composited onto EXPORTS ONLY (never stored), so upgrading instantly
-// removes it from every future download with no reprocessing. Drawn as SVG text so
-// there's no asset to host, sized relative to image width so it scales with any render.
+// removes it from every future download with no reprocessing.
+//
+// This uses a PNG ASSET, not SVG text, on purpose: rendering text requires a font
+// installed in the container, and slim Node images ship without one — every glyph came
+// out as a missing-glyph box. Compositing an image has no font dependency at all, and
+// reuses the same path as user logos. Set TRIAL_MARK_URL to a transparent PNG (S3 is
+// fine — the same bucket the logos live in). If it's unset we skip the mark entirely
+// rather than risk drawing garbage on a customer's download.
 async function applyTrialMark(jpegBuf) {
+  if (!TRIAL_MARK_URL) return jpegBuf;
   try {
     const meta = await sharp(jpegBuf).metadata();
     const W = meta.width || 1200;
-    const fs = Math.max(14, Math.round(W / 30));
-    const pad = Math.round(fs * 0.55);
-    const text = 'Made with StudioFinish';
-    const boxW = Math.round(text.length * fs * 0.54) + pad * 2;
-    const boxH = fs + pad * 2;
-    const svg = `<svg width="${boxW}" height="${boxH}" xmlns="http://www.w3.org/2000/svg">
-  <text x="${pad}" y="${Math.round(boxH * 0.68)}"
-        font-family="Helvetica, Arial, sans-serif" font-size="${fs}" font-weight="600"
-        fill="#ffffff" fill-opacity="0.85"
-        stroke="#000000" stroke-opacity="0.30" stroke-width="${Math.max(1, Math.round(fs / 14))}"
-        paint-order="stroke">${text}</text>
-</svg>`;
+    const H = meta.height || 800;
+
+    // Scale the mark to ~20% of image width so it reads at any resolution.
+    const markW = Math.max(120, Math.round(W * 0.20));
+    const resp = await axios.get(TRIAL_MARK_URL, { responseType: 'arraybuffer', timeout: 15000 });
+    const mark = await sharp(Buffer.from(resp.data))
+      .resize({ width: markW, withoutEnlargement: false })
+      .png()
+      .toBuffer();
+    const mm = await sharp(mark).metadata();
+
+    // Bottom-right with padding. sharp rejects gravity together with top/left, so the
+    // offsets are computed explicitly and clamped so a huge mark can't go negative.
+    const pad = Math.round(W * 0.02);
+    const left = Math.max(0, W - (mm.width || markW) - pad);
+    const top = Math.max(0, H - (mm.height || markW) - pad);
+
     return await sharp(jpegBuf)
-      .composite([{ input: Buffer.from(svg), gravity: 'southeast' }])
+      .composite([{ input: mark, top: top, left: left }])
       .jpeg({ quality: 95 })
       .toBuffer();
   } catch (e) {
